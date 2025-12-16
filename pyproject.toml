@@ -5,10 +5,11 @@ description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "torch",
     "sbi",
     "uproot",
     "matplotlib",
     "ipython",
     "ipykernel",
-    "torch"
+    "ipywidgets"
 ]

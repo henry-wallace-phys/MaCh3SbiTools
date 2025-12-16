@@ -14,7 +14,7 @@ class FastEpsFree(SbiInterface):
         super().train(**kwargs)
         
     def training_iter(self, iter, file_args, **kwargs):
-        self.load_x_theta(iter, **file_args)
+        self.simulate(iter, **file_args)
         
         training_kwargs = kwargs.get("TrainingSettings", {})
         final_round = iter == self._n_rounds - 1
@@ -39,7 +39,7 @@ class AutomaticTransform(SbiInterface):
 
 
     def training_iter(self, iter, file_args, **kwargs):
-        self.load_x_theta(iter, **file_args)
+        self.simulate(iter, **file_args)
 
         training_kwargs = kwargs.get("TrainingSettings", {})
 

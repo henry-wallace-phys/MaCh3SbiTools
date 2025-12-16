@@ -19,7 +19,6 @@ class SbiInterface(ABC):
         
         self.device_handler = TorchDeviceHander()
 
-
     @property
     def posterior(self):
         return self._posterior
