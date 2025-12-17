@@ -1,15 +1,26 @@
 from pyMaCh3Tutorial import MaCh3TutorialWrapper
+# from mach3sbitools.sbi.mach3_prior import MaCh3TorchPrior
+from mach3sbitools.utils.device_handler import TorchDeviceHander
+
+from sbi.utils import BoxUniform
+
 import torch
 from abc import ABC, abstractmethod
-from mach3sbitools.utils.device_handler import TorchDeviceHander
+from tqdm.autonotebook import tqdm
 
 class MaCh3SBIInterface(ABC):
     device_handler = TorchDeviceHander()
-    def __init__(self, handler: MaCh3TutorialWrapper, n_rounds: int, samples_per_round: int, prior):
+    def __init__(self, handler: MaCh3TutorialWrapper, n_rounds: int, samples_per_round: int):
         self._simulator = handler
         self._n_rounds = n_rounds
-        self._prior = prior
-        self._posterior = self._proposal = prior
+        # self._prior = MaCh3TorchPrior(handler, self.device_handler)
+        
+        low, high = handler.get_bounds()
+        
+        self._prior = BoxUniform(self.device_handler.to_tensor(low),
+                                 self.device_handler.to_tensor(high))
+        
+        self._posterior = self._proposal = self._prior
         self._samples_per_round = samples_per_round
 
     @property
@@ -18,7 +29,7 @@ class MaCh3SBIInterface(ABC):
 
     @property
     def x0(self):
-        return self._simulator.get_data_bins()
+        return self.device_handler.to_tensor(self._simulator.get_data_bins())
     
     def sample(self, n_samples: int, **kwargs):
         return self._posterior.sample((n_samples, ), **kwargs)
@@ -35,9 +46,10 @@ class MaCh3SBIInterface(ABC):
         return x, theta
     
     def train(self, sampling_settings, training_settings):
-        for r in range(self._n_rounds):
+        self._proposal = self._prior
+        for r in tqdm(range(self._n_rounds)):
             self.training_iter(sampling_settings, training_settings)
             
     @abstractmethod
-    def training_iter(sampling_settings, training_settings):
+    def training_iter(self, sampling_settings, training_settings):
         ...
