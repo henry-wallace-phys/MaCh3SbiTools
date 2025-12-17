@@ -1,6 +1,6 @@
 import mach3sbitools.sbi.sbi_mach3_fitters as sf
 from mach3sbitools.sbi.sbi_interface import SbiInterface
-from pyMaCh3Tutorial import MaCh3TutorialWrapper
+from mach3sbitools.mach3_interface.mach3_interface import MaCh3Interface
 
 
 __IMPLEMENTED_ALGORITHMS__ = {
@@ -12,7 +12,7 @@ __IMPLEMENTED_ALGORITHMS__ = {
     # 'flowmatching': sf.FlowMatching
 }
 
-def sbi_factory(fitter_name: str, file_handler: MaCh3TutorialWrapper, n_rounds: int, samples_per_round: int)->SbiInterface:
+def sbi_factory(fitter_name: str, file_handler: MaCh3Interface, n_rounds: int, samples_per_round: int)->SbiInterface:
     sbi_fitter = __IMPLEMENTED_ALGORITHMS__.get(fitter_name.lower())
     if sbi_fitter is None:
         raise ValueError(f"Cannot find {sbi_fitter}, implemented algorithms are {__IMPLEMENTED_ALGORITHMS__.keys()}")

@@ -3,7 +3,7 @@ from pathlib import Path
 from mach3sbitools.file_io.file_handler_factory import file_handler_factory
 from mach3sbitools.sbi.sbi_factory import sbi_factory
 
-from pyMaCh3Tutorial import MaCh3TutorialWrapper
+from mach3sbitools.mach3_interface.mach3_interface import MaCh3Interface
 
 class FileSbiUI:
     def __init__(self, input_file_path: Path, file_type: str='root'):
@@ -28,7 +28,7 @@ class FileSbiUI:
     
 class MaCh3SbiUI:
     def __init__(self, input_config_path: Path):
-        self._mach3 = MaCh3TutorialWrapper(input_config_path)
+        self._mach3 = MaCh3Interface(str(input_config_path))
         self._fitter = None
         
     @property
