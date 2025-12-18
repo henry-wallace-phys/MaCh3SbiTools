@@ -6,8 +6,8 @@ from mach3sbitools.mach3_interface.mach3_interface import MaCh3Interface
 from mach3sbitools.sbi.sbi_mach3_interface import MaCh3SBIInterface
 
 class FastEpsFree(MaCh3SBIInterface):
-    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int):
-        super().__init__(handler, n_rounds, samples_per_round)
+    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int, autosave_interval, output_file):
+        super().__init__(handler, n_rounds, samples_per_round, autosave_interval, output_file)
         self._inference = NPE_A(self._prior, show_progress_bars=False, device=self.device_handler.device)
         
     def training_iter(self, sampling_settings, training_settings):
@@ -20,8 +20,8 @@ class FastEpsFree(MaCh3SBIInterface):
         self._proposal = self._posterior
 
 class AutomaticTransform(MaCh3SBIInterface):
-    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int):
-        super().__init__(handler, n_rounds, samples_per_round)
+    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int, autosave_interval, output_file):
+        super().__init__(handler, n_rounds, samples_per_round, autosave_interval, output_file)
         self._inference = NPE_B(self._prior, show_progress_bars=False, device=self.device_handler.device)
 
     def training_iter(self, sampling_settings, training_settings):
@@ -32,8 +32,8 @@ class AutomaticTransform(MaCh3SBIInterface):
         self._proposal = self._posterior
 
 class DeistlerInference(MaCh3SBIInterface):
-    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int):
-        super().__init__(handler, n_rounds, samples_per_round)
+    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int, autosave_interval, output_file):
+        super().__init__(handler, n_rounds, samples_per_round, autosave_interval, output_file)
         self._inference = NPE(self._prior, show_progress_bars=False, device=self.device_handler.device)
 
     def training_iter(self, sampling_settings, training_settings):
@@ -45,8 +45,8 @@ class DeistlerInference(MaCh3SBIInterface):
         self._proposal = RestrictedPrior(self._prior, accept_reject_fn, sample_with="sir", posterior=self._posterior, device=self.device_handler.device)
 
 class Papamarkos(MaCh3SBIInterface):
-    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int):
-        super().__init__(handler, n_rounds, samples_per_round)
+    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int, autosave_interval, output_file):
+        super().__init__(handler, n_rounds, samples_per_round, autosave_interval, output_file)
         self._inference = NLE(self._prior, show_progress_bars=False, device=self.device_handler.device)
 
     def training_iter(self, sampling_settings, training_settings):
@@ -57,8 +57,8 @@ class Papamarkos(MaCh3SBIInterface):
         self._proposal = self._posterior.set_default_x(self.x0)
         
 class Glockler(MaCh3SBIInterface):
-    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int):
-        super().__init__(handler, n_rounds, samples_per_round)
+    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int, autosave_interval, output_file):
+        super().__init__(handler, n_rounds, samples_per_round, autosave_interval, output_file)
         self._inference = NLE(self._prior, show_progress_bars=False, device=self.device_handler.device)
     
     def training_iter(self, sampling_settings, training_settings):

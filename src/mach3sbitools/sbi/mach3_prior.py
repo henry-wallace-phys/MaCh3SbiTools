@@ -1,97 +1,116 @@
+from sbi.utils import BoxUniform
+from torch.distributions import Independent, Normal, Distribution
 import torch
-import torch
-from torch.distributions import Distribution, constraints
 
-from pyMaCh3Tutorial import MaCh3TutorialWrapper
 from mach3sbitools.utils.device_handler import TorchDeviceHander
 from mach3sbitools.mach3_interface.mach3_interface import MaCh3Interface
 
-class MaCh3TorchPrior(Distribution):
-    arg_constraints = {}
-    support = constraints.real_vector
-
-    def __init__(self, handler: MaCh3Interface, device_handler: TorchDeviceHander, validate_args=False):
-        self._handler = handler
+class MaCh3Prior(Distribution):
+    """
+    A prior that adapts based on simulator interface specifications.
+    
+    - If prior_sigma >= 0: Uses a Gaussian (Normal) prior with the given mean and std
+    - If prior_sigma < 0: Uses a flat (Uniform) prior over the bounds
+    
+    Parameters
+    ----------
+    simulator : object
+        Simulator object with get_bounds() and get_nominal_error() methods
+    """
+    
+    def __init__(self, simulator: MaCh3Interface):
+        self._simulator = simulator
+        self._config_file = simulator.get_config_file()
+        self.device_handler = TorchDeviceHander()
         
-        self._device_handler = device_handler
+        # Get bounds from simulator
+        lower_bounds, upper_bounds = simulator.get_bounds()
+        self.lower_bounds = self.device_handler.to_tensor(lower_bounds).float()
+        self.upper_bounds = self.device_handler.to_tensor(upper_bounds).float()
         
-        # FOR PICKLING
-        self._config_file = self._handler.get_config_file()
-
-        low, high = handler.get_bounds()
-
-        self.low = self._device_handler.to_tensor(low)
-        self.high = self._device_handler.to_tensor(high)
-
-        self._dim = self.low.shape[0]
-
+        # Get nominal error (prior specification)
+        prior_mu, prior_sigma = simulator.get_nominal_error()
+        self.prior_mu = self.device_handler.to_tensor(prior_mu).float()
+        self.prior_sigma = self.device_handler.to_tensor(prior_sigma).float()
+        
+        # Determine prior type and create appropriate distribution
+        if torch.all(self.prior_sigma >= 0):
+            # Gaussian prior
+            self.prior_type = "gaussian"
+            self._distribution = Independent(
+                Normal(loc=self.prior_mu, scale=self.prior_sigma),
+                reinterpreted_batch_ndims=1
+            )
+        else:
+            # Flat (uniform) prior
+            self.prior_type = "uniform"
+            self._distribution = BoxUniform(
+                low=self.lower_bounds,
+                high=self.upper_bounds
+            )
+        
+        # Initialize the parent Distribution class
         super().__init__(
-            batch_shape=torch.Size(),
-            event_shape=torch.Size([self._dim]),
-            validate_args=validate_args,
+            batch_shape=self._distribution.batch_shape,
+            event_shape=self._distribution.event_shape,
+            validate_args=False
         )
-
-    # ------------------------------------------------------------
-    # Sampling (uniform inside bounds)
-    # ------------------------------------------------------------
+    
     def sample(self, sample_shape=torch.Size()):
-        shape = sample_shape + self.event_shape
-        u = torch.rand(shape, device=self.low.device)
-        return self.low + u * (self.high - self.low)
-
-    # ------------------------------------------------------------
-    # Log probability (delegates to MaCh3)
-    # ------------------------------------------------------------
-    def log_prob(self, theta: torch.Tensor) -> torch.Tensor:
-        """
-        Compute log probability for theta under MaCh3 prior.
+        """Sample from the prior."""
+        samples = self._distribution.sample(sample_shape)
         
-        Parameters:
-            theta: torch.Tensor of shape (..., D)
+        # For Gaussian prior, clip to bounds
+        if self.prior_type == "gaussian":
+            samples = torch.max(samples, self.lower_bounds)
+            samples = torch.min(samples, self.upper_bounds)
         
-        Returns:
-            logp: torch.Tensor of shape (...,)
-        """
-        # --- 1. Check bounds per sample ---
-        oob = (theta <= self.low) | (theta >= self.high)  # shape (..., D)
-        oob_any = oob.any(dim=-1)  # shape (...,) True if any component is OOB
+        return samples
+    
+    def log_prob(self, value):
+        """Compute log probability of value under the prior."""
+        # Check if value is within bounds
+        within_bounds = torch.all(
+            (value >= self.lower_bounds) & (value <= self.upper_bounds),
+            dim=-1
+        )
+        
+        log_prob = self._distribution.log_prob(value)
+        
+        # For values outside bounds, set log_prob to -inf
+        neg_inf = self.device_handler.to_tensor(-float('inf'))
+        log_prob = torch.where(within_bounds, log_prob, neg_inf)
+        
+        return log_prob
+    
+    @property
+    def mean(self):
+        """Return the mean of the prior."""
+        if self.prior_type == "gaussian":
+            # Clip mean to bounds
+            return torch.max(torch.min(self.prior_mu, self.upper_bounds), self.lower_bounds)
+        else:
+            # For uniform, return midpoint
+            return (self.lower_bounds + self.upper_bounds) / 2
+    
+    @property
+    def device(self):
+        """Return the device where tensors are stored."""
+        return self.device_handler.device
+    
+    def __repr__(self):
+        return (f"AdaptivePrior(type={self.prior_type}, "
+                f"bounds=[{self.lower_bounds.tolist()}, {self.upper_bounds.tolist()}])")
 
-        # initialize logp with -inf for all samples
-        logp = torch.full(theta.shape[:-1], float('-inf'), device=self.low.device)
 
-        # --- 2. Only compute log_prob for in-bounds samples ---
-        in_bounds_idx = ~oob_any
-        if in_bounds_idx.any():
-            theta_in_bounds = theta[in_bounds_idx]  # shape (N_in_bounds, D)
-
-            # --- 3. Move to CPU for MaCh3 handler ---
-            theta_cpu = theta_in_bounds.detach().cpu().numpy()
-
-            # --- 4. Evaluate MaCh3 log_prior ---
-            if theta_cpu.ndim == 2:
-                logp_vals = [-1*self._handler.get_log_prior(p.tolist()) for p in theta_cpu]
-                for i, l in enumerate(logp_vals):
-                    if l < -1234567:
-                        logp_vals[i] = float('-inf')
-                        
-                
-            else:  # single vector
-                logp_vals = -1*self._handler.get_log_prior(theta_cpu.tolist())
-                if logp_vals<-1234567:
-                    logp_vals = float('-inf')
-
-            # --- 5. Move back to device ---
-            logp[in_bounds_idx] = self._device_handler.to_tensor(logp_vals)
-
-        return logp
-
+    # Allows us to pickle the file!
     def __getstate__(self):
         state = self.__dict__.copy()
         # remove unpickleable C++ handler
-        state["_handler"] = None
+        state["_simulator"] = None
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
         # recreate C++ handler, singleton so it's the same across ALL processes!
-        self._handler = MaCh3Interface(self._config_file)
+        self._simulator = MaCh3Interface(self._config_file)

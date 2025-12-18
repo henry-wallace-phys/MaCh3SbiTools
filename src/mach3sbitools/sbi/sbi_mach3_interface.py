@@ -1,5 +1,5 @@
 from mach3sbitools.mach3_interface.mach3_interface import MaCh3Interface
-from mach3sbitools.sbi.mach3_prior import MaCh3TorchPrior
+from mach3sbitools.sbi.mach3_prior import MaCh3Prior
 from mach3sbitools.utils.device_handler import TorchDeviceHander
 
 from sbi.utils import BoxUniform
@@ -12,20 +12,25 @@ from tqdm.autonotebook import tqdm
 
 class MaCh3SBIInterface(ABC):
     device_handler = TorchDeviceHander()
-    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int):
+    def __init__(self, handler: MaCh3Interface, n_rounds: int, samples_per_round: int, autosave_interval: int=-1, output_file: Path=Path("model_output.pkl")):
         self._simulator = handler
         self._n_rounds = n_rounds
-        # self._prior = MaCh3TorchPrior(handler, self.device_handler)
+        self._prior = MaCh3Prior(handler)
+        
+        
+        self._autosave_interval = autosave_interval
+        self._output_file = output_file
         
         self._config_file = self._simulator.get_config_file()
         
-        low, high = handler.get_bounds()
+        # low, high = handler.get_bounds()
                 
-        self._prior = BoxUniform(self.device_handler.to_tensor(low),
-                                 self.device_handler.to_tensor(high))
+        # self._prior = BoxUniform(self.device_handler.to_tensor(low),
+        #                          self.device_handler.to_tensor(high))
         
         self._posterior = self._proposal = self._prior
         self._samples_per_round = samples_per_round
+
 
     @property
     def posterior(self):
@@ -63,8 +68,10 @@ class MaCh3SBIInterface(ABC):
     
     def train(self, sampling_settings, training_settings):
         self._proposal = self._prior
-        for _ in tqdm(range(self._n_rounds)):
+        for t in tqdm(range(self._n_rounds)):
             self.training_iter(sampling_settings, training_settings)
+            if self._autosave_interval>0 and t%self._autosave_interval==0:
+                self.save(self._output_file)
             
     @abstractmethod
     def training_iter(self, sampling_settings, training_settings):
@@ -83,16 +90,18 @@ class MaCh3SBIInterface(ABC):
         self._simulator = MaCh3Interface(self._config_file)
 
     def save(self, output: Path):
+        # Cast to path
+        output = Path(output)
+        print(f"Saving to {output}")
         output.parent.mkdir(parents=True, exist_ok=True)
         with open(output, 'wb') as handle:
-            pickle.dump(self, handle)
+            pickle.dump(self._posterior, handle)
     
-    @staticmethod
-    def load_from_file(input: Path)->'MaCh3SBIInterface':
+    def load_posterior(input: Path):
         if not input.exists():
             raise FileNotFoundError(f"Cannot find file: {input}")
         
         with open(input, 'rb') as handle:
-            input_file: MaCh3SBIInterface = pickle.load(handle)
+            input_file = pickle.load(self._posterior)
         
         return input_file
