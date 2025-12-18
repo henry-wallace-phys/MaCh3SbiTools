@@ -1,10 +1,16 @@
-from pyMaCh3Tutorial import MaCh3TutorialWrapper
+try:
+    from pyMaCh3DUNE import MaCh3DUNEWrapper as MaCh3Wrapper
+    print("Found MaCh3 DUNE instance, using that!")
+except Exception:
+    from pyMaCh3Tutorial import MaCh3TutorialWrapper as MaCh3Wrapper
+    print("Found MaCh3 DUNE instance, using that!")
+    
 from threading import Lock
 
-class MaCh3Interface(MaCh3TutorialWrapper):
+class MaCh3Interface(MaCh3Wrapper):
     """
-    Per-process singleton cache for MaCh3TutorialWrapper objects,
-    keyed by config file. Inherits from MaCh3TutorialWrapper.
+    Per-process singleton cache for MaCh3Wrapper objects,
+    keyed by config file. Inherits from MaCh3[DUNE/Tutorial]Wrapper (these are ducktyped!).
     """
     _cache = {}
     _lock = Lock()
