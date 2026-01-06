@@ -1,0 +1,42 @@
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sbi/inference/trainers/npe/npe_base.py:177: UserWarning: Data x has device 'cuda:0'. Moving x to the data_device 'cuda'. Training will proceed on device 'cuda'.
+  theta, x = validate_theta_and_x(
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sbi/inference/trainers/npe/npe_base.py:177: UserWarning: Parameters theta has device 'cuda:0'. Moving theta to the data_device 'cuda'. Training will proceed on device 'cuda'.
+  theta, x = validate_theta_and_x(
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sbi/utils/sbiutils.py:804: UserWarning: The passed discrete prior has no mean or stddev attribute, estimating them from samples to build affine standardizing transform.
+  transform = prior_mean_std_transform(prior, device)
+/home/henryi/sft/MaCh3SbiTools/src/mach3sbitools/diagnostics/diagnostics.py:56: UserWarning: Capping max_sampling_batch_size from 10000 to 10 to avoid excessive memory usage.
+  posterior_x = self.mach3_handler.posterior.sample_batched((1,), x=prior_x)[0]
+Training the classifiers under H0, permutation = True:   0%|          | 0/100 [00:00<?, ?it/s]Training the classifiers under H0, permutation = True:   1%|          | 1/100 [02:11<3:37:08, 131.60s/it]Training the classifiers under H0, permutation = True:   2%|▏         | 2/100 [03:18<2:32:33, 93.40s/it] Training the classifiers under H0, permutation = True:   3%|▎         | 3/100 [04:31<2:16:07, 84.20s/it]Training the classifiers under H0, permutation = True:   4%|▍         | 4/100 [05:48<2:10:23, 81.50s/it]Training the classifiers under H0, permutation = True:   5%|▌         | 5/100 [06:46<1:55:16, 72.81s/it]/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+Training the classifiers under H0, permutation = True:   6%|▌         | 6/100 [07:54<1:51:50, 71.39s/it]/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+Training the classifiers under H0, permutation = True:   7%|▋         | 7/100 [08:00<1:17:11, 49.80s/it]/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+Training the classifiers under H0, permutation = True:   8%|▊         | 8/100 [08:01<52:34, 34.28s/it]  /scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")
+Training the classifiers under H0, permutation = True:   9%|▉         | 9/100 [08:02<36:13, 23.88s/it]Training the classifiers under H0, permutation = True:  10%|█         | 10/100 [09:29<1:05:16, 43.51s/it]Training the classifiers under H0, permutation = True:  11%|█         | 11/100 [11:03<1:27:13, 58.81s/it]Training the classifiers under H0, permutation = True:  12%|█▏        | 12/100 [12:27<1:37:41, 66.61s/it]Training the classifiers under H0, permutation = True:  13%|█▎        | 13/100 [13:32<1:35:48, 66.08s/it]Training the classifiers under H0, permutation = True:  14%|█▍        | 14/100 [14:49<1:39:17, 69.28s/it]Training the classifiers under H0, permutation = True:  15%|█▌        | 15/100 [16:10<1:43:08, 72.80s/it]Training the classifiers under H0, permutation = True:  16%|█▌        | 16/100 [17:17<1:39:30, 71.08s/it]Training the classifiers under H0, permutation = True:  17%|█▋        | 17/100 [18:31<1:39:36, 72.01s/it]Training the classifiers under H0, permutation = True:  18%|█▊        | 18/100 [19:41<1:37:33, 71.38s/it]Training the classifiers under H0, permutation = True:  19%|█▉        | 19/100 [20:54<1:36:53, 71.77s/it]Training the classifiers under H0, permutation = True:  20%|██        | 20/100 [21:35<1:23:23, 62.54s/it]Training the classifiers under H0, permutation = True:  21%|██        | 21/100 [22:35<1:21:31, 61.92s/it]/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sklearn/neural_network/_multilayer_perceptron.py:788: UserWarning: Training interrupted by user.
+  warnings.warn("Training interrupted by user.")

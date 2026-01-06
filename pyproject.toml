@@ -11,5 +11,9 @@ dependencies = [
     "matplotlib",
     "ipython",
     "ipykernel",
-    "ipywidgets"
+    "ipywidgets",
+    "click"
 ]
+
+[project.scripts]
+mach3sbi = "mach3sbitools.apps.__main__mach3sbi__:main"

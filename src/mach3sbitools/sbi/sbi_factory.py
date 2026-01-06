@@ -1,20 +1,25 @@
 import mach3sbitools.sbi.sbi_mach3_fitters as sf
 from mach3sbitools.sbi.sbi_mach3_interface import MaCh3SBIInterface
-from mach3sbitools.mach3_interface.mach3_interface import MaCh3Interface
 from pathlib import Path
+from mach3sbitools.sbi.sbi_mach3_interface import MaCh3SBIInterface, set_inference, set_inference_embedding
+
 
 __IMPLEMENTED_ALGORITHMS__ = {
-    'fastepsfree': sf.FastEpsFree,
-    'automatictransform': sf.AutomaticTransform,
-    'deistlerinference': sf.DeistlerInference,
-    'papamarkos': sf.Papamarkos,
-    'glockler': sf.Glockler
-    # 'flowmatching': sf.FlowMatching
+    # NPE
+    'fast_eps_free': sf.FastEpsFree,
+    'automatic_transform': sf.AutomaticTransform,
+    'mechanistic_embedding': sf.FastMechanisticEmbedding,
+    'truncated_proposal': sf.TruncatedProposal,
+    'flow_matching': sf.FlowMatching,
+    # NLE
+    'neural_posterior_score_estimation': sf.NeuralPosteriorScoreEstimation,
+    'sequtential_neural_likelihood': sf.SequentialNeuraLikelihood,
+    'variational_likelihood_estimator': sf.VariationalLikelihoodEstimator,
 }
 
-def sbi_factory(fitter_name: str, file_handler: MaCh3Interface, n_rounds: int, samples_per_round: int, autosave_interval: int, output_file: Path)->MaCh3SBIInterface:
+def sbi_factory(fitter_name: str, mach3_interface, n_rounds: int, samples_per_round: int, autosave_interval: int, output_file: Path)->MaCh3SBIInterface:
     sbi_fitter = __IMPLEMENTED_ALGORITHMS__.get(fitter_name.lower())
     if sbi_fitter is None:
         raise ValueError(f"Cannot find {sbi_fitter}, implemented algorithms are {__IMPLEMENTED_ALGORITHMS__.keys()}")
     
-    return sbi_fitter(file_handler, n_rounds, samples_per_round, autosave_interval=autosave_interval, output_file=output_file)
+    return sbi_fitter(mach3_interface, n_rounds, samples_per_round, autosave_interval=autosave_interval, output_file=output_file)
