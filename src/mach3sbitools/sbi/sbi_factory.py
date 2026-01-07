@@ -8,7 +8,9 @@ __IMPLEMENTED_ALGORITHMS__ = {
     # NPE
     'fast_eps_free': sf.FastEpsFree,
     'automatic_transform': sf.AutomaticTransform,
+    'splined_automatic_transform': sf.AutomaticSplinedTransform,
     'mechanistic_embedding': sf.FastMechanisticEmbedding,
+    'splined_mechanistic_embedding': sf.FastSplinedMechanisticEmbedding,
     'truncated_proposal': sf.TruncatedProposal,
     'flow_matching': sf.FlowMatching,
     # NLE

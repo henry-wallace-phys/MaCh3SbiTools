@@ -17,3 +17,4 @@ dependencies = [
 
 [project.scripts]
 mach3sbi = "mach3sbitools.apps.__main__mach3sbi__:main"
+mach3sbi_model_comp = "mach3sbitools.apps.__main__compare_models__:main"

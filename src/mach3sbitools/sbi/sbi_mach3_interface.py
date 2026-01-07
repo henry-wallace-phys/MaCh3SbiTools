@@ -41,7 +41,7 @@ class MaCh3SBIInterface:
             samples_per_round: Samples per round
             autosave_interval: Save interval (-1 to disable)
             output_file: Output file path
-            scaling: Parameter scaling method ("none", "standardize", "normalise")
+            scaling: Parameter scaling method ("none", "standardise", "normalise")
         """
         self._mach3_interface = mach3_interface
         self._n_rounds = n_rounds
@@ -175,7 +175,6 @@ class MaCh3SBIInterface:
         if self._inference is None:
             raise MaCh3InferenceNotSetup("Inference method has not been setup yet!")
         
-        print(f"Initial DATA: {self.x0}")
         print(f"Using scaling method: {self._scaling}")
         
         if self._scaling != "none":
@@ -191,10 +190,10 @@ class MaCh3SBIInterface:
     def training_iter(self, sampling_settings, training_settings):
         """Single training iteration."""
         x, theta = self.simulate()
-        _ = self._inference.append_simulations(
+        estim = self._inference.append_simulations(
             theta, x, proposal=self._proposal
         ).train(**training_settings, show_train_summary=True)
-        self._posterior = self._inference.build_posterior(**sampling_settings).set_default_x(self.x0)
+        self._posterior = self._inference.build_posterior(estim, **sampling_settings).set_default_x(self.x0)
         self._proposal = self._posterior
     
     def __getstate__(self):
@@ -309,7 +308,7 @@ def set_inference(inference_cls, **inference_kwargs):
             samples_per_round, 
             autosave_interval=-1, 
             output_file=Path("model_output.pkl"),
-            scaling="standardize",
+            scaling="none",
             *args, 
             **kwargs
         ):
@@ -363,7 +362,7 @@ def set_inference_embedding(inference_cls, embedding_cls, nn_type="mdn", nn_args
             samples_per_round, 
             autosave_interval=-1, 
             output_file=Path("model_output.pkl"),
-            scaling="standardize",
+            scaling="none",
             *args, 
             **kwargs
         ):

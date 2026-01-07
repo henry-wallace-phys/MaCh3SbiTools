@@ -17,8 +17,15 @@ __NN_ARGS__={
 Simple classes:
 '''
 # NPE
-@set_inference_embedding(NPE_B, FCEmbedding, nn_type='mdn', nn_args=__NN_ARGS__)
+@set_inference_embedding(NPE_B, FCEmbedding, nn_type='nsf', nn_args=__NN_ARGS__)
+class FastSplinedMechanisticEmbedding(MaCh3SBIInterface): ...
+
+# NPE
+@set_inference_embedding(NPE_B, FCEmbedding, nn_type='maf', nn_args=__NN_ARGS__)
 class FastMechanisticEmbedding(MaCh3SBIInterface): ...
+
+@set_inference_embedding(NPE, FCEmbedding, nn_type='nsf', nn_args=__NN_ARGS__)
+class AutomaticSplinedTransform(MaCh3SBIInterface): ...
 
 @set_inference_embedding(NPE, FCEmbedding, nn_type='maf', nn_args=__NN_ARGS__)
 class AutomaticTransform(MaCh3SBIInterface): ...
