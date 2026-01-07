@@ -327,7 +327,7 @@ def set_inference(inference_cls, **inference_kwargs):
             self._inference = inference_cls(
                 self._prior, 
                 device=self.device_handler.device, 
-                show_progress_bars=False, 
+                show_progress_bars=True, 
                 **inference_kwargs
             )
             
@@ -386,7 +386,7 @@ def set_inference_embedding(inference_cls, embedding_cls, nn_type="mdn", nn_args
                 self._prior, 
                 density_estimator=density_estimator, 
                 device=self.device_handler.device, 
-                show_progress_bars=False, 
+                show_progress_bars=True, 
                 **inference_kwargs
             )
             

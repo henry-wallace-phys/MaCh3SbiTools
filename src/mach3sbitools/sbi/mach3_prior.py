@@ -124,10 +124,13 @@ class MaCh3Prior(torch.distributions.Distribution):
         """Construct the base prior distribution in original parameter space."""
         
         if self.n_flat == 0:
-            # All Gaussian
-            self._base_prior = Independent(
-                Normal(loc=self.nominals, scale=self.errors),
-                1
+            # All Gaussian - use bounded Gaussian
+            self._base_prior = BoundedGaussianPrior(
+                nominals=self.nominals,
+                errors=self.errors,
+                lower_bounds=self.lower_bounds,
+                upper_bounds=self.upper_bounds,
+                device=self.device
             )
             self.prior_type = "gaussian"
             
@@ -253,11 +256,124 @@ class MaCh3Prior(torch.distributions.Distribution):
         return in_bounds.all(dim=-1)
 
 
+class BoundedGaussianPrior(torch.distributions.Distribution):
+    """
+    Independent Gaussian distributions with hard bounds.
+    
+    Samples outside bounds have -inf log probability (rejected).
+    Sampling uses rejection sampling to ensure all samples are within bounds.
+    """
+    
+    def __init__(
+        self,
+        nominals: torch.Tensor,
+        errors: torch.Tensor,
+        lower_bounds: torch.Tensor,
+        upper_bounds: torch.Tensor,
+        device: str = "cpu"
+    ):
+        batch_shape = torch.Size()
+        event_shape = torch.Size([len(nominals)])
+        
+        super().__init__(batch_shape=batch_shape, event_shape=event_shape, validate_args=False)
+        
+        self.device = device
+        self.nominals = nominals.to(device)
+        self.errors = errors.to(device)
+        self.lower_bounds = lower_bounds.to(device)
+        self.upper_bounds = upper_bounds.to(device)
+        
+        # Create underlying Gaussian distribution
+        self.base_dist = Independent(Normal(loc=nominals, scale=errors), 1)
+    
+    @property
+    def support(self):
+        """Return the support of the distribution."""
+        from torch.distributions import constraints
+        return constraints.independent(
+            constraints.interval(self.lower_bounds, self.upper_bounds),
+            1
+        )
+    
+    def sample(self, sample_shape=torch.Size([])):
+        """Sample from bounded Gaussian using rejection sampling."""
+        if not isinstance(sample_shape, torch.Size):
+            if isinstance(sample_shape, (int, tuple, list)):
+                sample_shape = torch.Size([sample_shape] if isinstance(sample_shape, int) else sample_shape)
+            else:
+                sample_shape = torch.Size([])
+        
+        total_samples = sample_shape.numel() if len(sample_shape) > 0 else 1
+        samples = torch.zeros(sample_shape + self.event_shape, device=self.device)
+        
+        # Rejection sampling
+        remaining = torch.ones(sample_shape, dtype=torch.bool, device=self.device)
+        max_iterations = 10000
+        
+        for _ in range(max_iterations):
+            if not remaining.any():
+                break
+            
+            # Sample from base Gaussian
+            n_remaining = remaining.sum().item()
+            new_samples = self.base_dist.sample(torch.Size([n_remaining]))
+            
+            # Check which samples are in bounds
+            in_bounds = ((new_samples >= self.lower_bounds) & 
+                        (new_samples <= self.upper_bounds)).all(dim=-1)
+            
+            # Fill in valid samples
+            remaining_indices = torch.where(remaining.flatten())[0]
+            valid_indices = remaining_indices[in_bounds]
+            
+            if len(sample_shape) == 0:
+                if in_bounds.any():
+                    samples = new_samples[in_bounds][0]
+                    remaining = torch.tensor(False, device=self.device)
+            else:
+                samples.view(-1, samples.shape[-1])[valid_indices] = new_samples[in_bounds]
+                remaining.view(-1)[valid_indices] = False
+        
+        if remaining.any():
+            raise RuntimeError(f"Rejection sampling failed after {max_iterations} iterations. "
+                             "This may indicate bounds are too tight relative to Gaussian width.")
+        
+        return samples
+    
+    def rsample(self, sample_shape=torch.Size([])):
+        """
+        Sample with reparameterization trick.
+        
+        Note: This uses rejection sampling which breaks the gradient flow.
+        For methods requiring gradients, consider using a different approach.
+        """
+        return self.sample(sample_shape)
+    
+    def log_prob(self, value):
+        """
+        Compute log probability, returning -inf for values outside bounds.
+        """
+        if value.device.type != self.device:
+            value = value.to(self.device)
+        
+        # Compute base Gaussian log prob
+        log_prob = self.base_dist.log_prob(value)
+        
+        # Check bounds
+        in_bounds = ((value >= self.lower_bounds) & (value <= self.upper_bounds)).all(dim=-1)
+        
+        # Set out-of-bounds samples to -inf
+        log_prob = torch.where(in_bounds, log_prob, torch.tensor(float('-inf'), device=self.device))
+        
+        return log_prob
+
+
 class MixedPrior(torch.distributions.Distribution):
     """
     Custom distribution for mixed Gaussian and flat priors in original parameter space.
     
     This is the base distribution before any scaling is applied.
+    Gaussian parameters are bounded with rejection (no clipping).
     """
     
     def __init__(
@@ -324,7 +440,7 @@ class MixedPrior(torch.distributions.Distribution):
         return variances
     
     def sample(self, sample_shape=torch.Size([])):
-        """Sample from the mixed prior."""
+        """Sample from the mixed prior using rejection sampling for Gaussian parameters."""
         if not isinstance(sample_shape, torch.Size):
             if isinstance(sample_shape, (int, tuple, list)):
                 sample_shape = torch.Size([sample_shape] if isinstance(sample_shape, int) else sample_shape)
@@ -333,43 +449,57 @@ class MixedPrior(torch.distributions.Distribution):
         
         samples = torch.zeros(sample_shape + (len(self.nominals),), device=self.device)
         
-        for i, dist in enumerate(self.component_dists):
-            param_samples = dist.sample(sample_shape)
+        # Sample uniform parameters (always in bounds)
+        for i in self.flat_indices:
+            samples[..., i] = self.component_dists[i].sample(sample_shape)
+        
+        # Sample Gaussian parameters with rejection sampling
+        if len(self.gaussian_indices) > 0:
+            remaining = torch.ones(sample_shape + (len(self.gaussian_indices),), 
+                                 dtype=torch.bool, device=self.device)
+            max_iterations = 10000
             
-            # Clip Gaussian parameters to bounds (uniform already respects bounds)
-            if self.gaussian_mask[i]:
-                param_samples = torch.clamp(param_samples, self.lower_bounds[i], self.upper_bounds[i])
+            for iteration in range(max_iterations):
+                if not remaining.any():
+                    break
+                
+                # Sample all Gaussian parameters
+                for idx, i in enumerate(self.gaussian_indices):
+                    # Sample where we still need valid samples for this parameter
+                    n_remaining = remaining[..., idx].sum().item()
+                    if n_remaining == 0:
+                        continue
+                    
+                    new_samples = self.component_dists[i].sample(torch.Size([n_remaining]))
+                    
+                    # Check bounds for this parameter
+                    in_bounds = ((new_samples >= self.lower_bounds[i]) & 
+                               (new_samples <= self.upper_bounds[i]))
+                    
+                    # Fill in valid samples
+                    remaining_flat = remaining[..., idx].flatten()
+                    remaining_indices = torch.where(remaining_flat)[0]
+                    valid_indices = remaining_indices[in_bounds]
+                    
+                    samples.view(-1, samples.shape[-1])[valid_indices, i] = new_samples[in_bounds]
+                    remaining.view(-1, remaining.shape[-1])[valid_indices, idx] = False
             
-            samples[..., i] = param_samples
+            if remaining.any():
+                raise RuntimeError(f"Rejection sampling failed after {max_iterations} iterations. "
+                                 "This may indicate bounds are too tight relative to Gaussian width.")
         
         return samples
     
     def rsample(self, sample_shape=torch.Size([])):
-        """Sample with reparameterization trick."""
-        if not isinstance(sample_shape, torch.Size):
-            if isinstance(sample_shape, (int, tuple, list)):
-                sample_shape = torch.Size([sample_shape] if isinstance(sample_shape, int) else sample_shape)
-            else:
-                sample_shape = torch.Size([])
+        """
+        Sample with reparameterization trick.
         
-        samples = torch.zeros(sample_shape + (len(self.nominals),), device=self.device)
-        
-        for i, dist in enumerate(self.component_dists):
-            if hasattr(dist, 'rsample'):
-                param_samples = dist.rsample(sample_shape)
-            else:
-                param_samples = dist.sample(sample_shape)
-            
-            # Clip Gaussian parameters to bounds (uniform already respects bounds)
-            if self.gaussian_mask[i]:
-                param_samples = torch.clamp(param_samples, self.lower_bounds[i], self.upper_bounds[i])
-            
-            samples[..., i] = param_samples
-        
-        return samples
+        Note: Uses rejection sampling for Gaussian parameters, which breaks gradient flow.
+        """
+        return self.sample(sample_shape)
     
     def log_prob(self, value):
-        """Compute log probability of value under the mixed prior."""
+        """Compute log probability, returning -inf for values outside bounds."""
         if value.device.type != self.device:
             value = value.to(self.device)
         
@@ -379,13 +509,16 @@ class MixedPrior(torch.distributions.Distribution):
             param_values = value[..., i]
             param_log_prob = dist.log_prob(param_values)
             
-            # For Gaussian parameters, handle bounds
-            if self.gaussian_mask[i]:
-                param_log_prob = torch.where(
-                    (param_values >= self.lower_bounds[i]) & (param_values <= self.upper_bounds[i]),
-                    param_log_prob,
-                    torch.tensor(float('-inf'), device=self.device)
-                )
+            # Check bounds for all parameters
+            in_bounds = ((param_values >= self.lower_bounds[i]) & 
+                        (param_values <= self.upper_bounds[i]))
+            
+            # Set out-of-bounds to -inf
+            param_log_prob = torch.where(
+                in_bounds,
+                param_log_prob,
+                torch.tensor(float('-inf'), device=self.device)
+            )
             
             log_prob = log_prob + param_log_prob
         

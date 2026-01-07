@@ -7,7 +7,7 @@ from sbi.neural_nets.embedding_nets import FCEmbedding
 from mach3sbitools.sbi.sbi_mach3_interface import MaCh3SBIInterface, set_inference, set_inference_embedding
  
 __NN_ARGS__={
-    'num_bins': 20,
+    'num_bins': 80,
     'hidden_features': 256,
     'num_transforms': 20,
     'num_components': 50
