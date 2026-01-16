@@ -19,9 +19,9 @@ __IMPLEMENTED_ALGORITHMS__ = {
     'variational_likelihood_estimator': sf.VariationalLikelihoodEstimator,
 }
 
-def sbi_factory(fitter_name: str, mach3_interface, n_rounds: int, samples_per_round: int, autosave_interval: int, output_file: Path)->MaCh3SBIInterface:
+def sbi_factory(fitter_name: str, mach3_interface, n_rounds: int, prior_samples: int, samples_per_round: int, autosave_interval: int, output_file: Path)->MaCh3SBIInterface:
     sbi_fitter = __IMPLEMENTED_ALGORITHMS__.get(fitter_name.lower())
     if sbi_fitter is None:
         raise ValueError(f"Cannot find {sbi_fitter}, implemented algorithms are {__IMPLEMENTED_ALGORITHMS__.keys()}")
     
-    return sbi_fitter(mach3_interface, n_rounds, samples_per_round, autosave_interval=autosave_interval, output_file=output_file)
+    return sbi_fitter(mach3_interface, n_rounds, prior_samples, samples_per_round, autosave_interval=autosave_interval, output_file=output_file)

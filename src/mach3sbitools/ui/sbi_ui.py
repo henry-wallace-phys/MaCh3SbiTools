@@ -49,8 +49,12 @@ class MaCh3SbiUI:
     def mach3(self):
         return self._mach3
         
-    def run_fit(self, fit_type, n_rounds, samples_per_round, sampling_settings={}, training_settings={}, autosave_interval: int=-1, output_file: Path = Path("model_output.pkl")):
-        self._fitter = sbi_factory(fit_type, self._mach3, n_rounds, samples_per_round, autosave_interval=autosave_interval, output_file=output_file)
+    def initialise_fitter(self, fit_type, n_rounds, prior_samples, samples_per_round, autosave_interval: int=-1, output_file: Path = Path("model_output.pkl")):
+        self._fitter = sbi_factory(fit_type, self._mach3, n_rounds, prior_samples, samples_per_round, autosave_interval=autosave_interval, output_file=output_file)
+        
+    def train(self, sampling_settings={}, training_settings={}):
+        if self._fitter is None:
+            raise ValueError("Fitter not initialised. Please run 'initialise_fitter' first.")
         self._fitter.train(sampling_settings, training_settings)
         
     @property

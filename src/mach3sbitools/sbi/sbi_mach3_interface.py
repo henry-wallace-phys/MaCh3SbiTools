@@ -13,7 +13,8 @@ import numpy as np
 
 from sbi.neural_nets import posterior_nn
 from sbi.analysis.plot import sbc_rank_plot
-from sbi.diagnostics import check_sbc, check_tarp, run_sbc, run_tarp
+from sbi.diagnostics import check_sbc, run_sbc
+from sbi.inference import ImportanceSamplingPosterior
 
 
 class MaCh3InferenceNotSetup(Exception):
@@ -28,7 +29,8 @@ class MaCh3SBIInterface:
         mach3_interface, 
         inference_method, 
         n_rounds: int, 
-        samples_per_round: int, 
+        prior_samples: int,
+        samples_per_round: int,
         autosave_interval: int = -1, 
         output_file: Path = Path("model_output.pkl"),
         scaling: str = "none"
@@ -49,6 +51,7 @@ class MaCh3SBIInterface:
         self._output_file = output_file
         self._config_file = self._mach3_interface.get_config_file()
         self._scaling = scaling
+        self._prior_samples = prior_samples
         
         # Create prior with scaling
         self._prior = create_mach3_prior(
@@ -89,6 +92,79 @@ class MaCh3SBIInterface:
         """
         return self._posterior.sample((n_samples, ), **kwargs)
     
+    def sample_refined(self, n_samples: int, **kwargs):
+        """
+        Refine posterior samples using importance sampling with exact Poisson likelihood.
+        This should match MaCh3's MCMC results exactly.
+        """
+        print("Refining posterior with Poisson likelihood...")
+        
+        # Use SIR (Sampling Importance Resampling) posterior
+        posterior_sir = ImportanceSamplingPosterior(
+            potential_fn=self.get_log_prob,
+            proposal=self._posterior,
+            method="sir",
+            device=self.device_handler.device,
+        ).set_default_x(self.x0)
+        
+        # Sample in batches for efficiency
+        theta_refined = posterior_sir.sample(
+            (n_samples,),
+            show_progress_bars=True,
+            **kwargs
+        )
+        
+        return theta_refined
+
+    def get_log_prob(self, theta: torch.Tensor, x0: torch.Tensor):
+        """
+        Compute log probability using Poisson likelihood, matching MaCh3's binned LLH.
+        
+        Args:
+            theta: Parameters (in scaled space), shape (n_samples, n_params)
+            x0: Observed data bins, shape (n_bins,)
+        
+        Returns:
+            log_prob: Log probability for each parameter set, shape (n_samples,)
+        """
+        # Get expected bin heights from MaCh3 reweighting
+        # x_expected shape: (n_samples, n_bins)
+        # theta_scaled shape: (n_samples, n_params)
+        x_expected, theta_scaled = self.get_x_vals(theta, is_scaled=True)
+        
+        # Ensure x0 has correct shape for broadcasting
+        if x0.dim() == 1:
+            x0 = x0.unsqueeze(0)  # Shape: (1, n_bins)
+        
+        # Poisson log-likelihood: log P(data | expected)
+        # For each bin: data * log(expected) - expected - log(data!)
+        # Add small epsilon to avoid log(0)
+        epsilon = 1e-10
+        
+        log_likelihood = (
+            x0 * torch.log(x_expected + epsilon) - 
+            x_expected - 
+            torch.lgamma(x0 + 1)
+        )
+        
+        # Handle numerical issues
+        log_likelihood = torch.nan_to_num(
+            log_likelihood,
+            nan=-1e10,
+            posinf=-1e10, 
+            neginf=-1e10
+        )
+        
+        # Sum over bins to get total log-likelihood
+        log_likelihood = log_likelihood.sum(dim=-1)  # Shape: (n_samples,)
+        
+        # Add log prior
+        log_prior = self._prior.log_prob(theta_scaled)
+        
+        log_prob = log_likelihood + log_prior
+        
+        return log_prob
+
     def sample_original(self, n_samples: int, **kwargs):
         """
         Sample from posterior and transform to original parameter space.
@@ -96,7 +172,7 @@ class MaCh3SBIInterface:
         scaled_samples = self.sample(n_samples, **kwargs)
         return self._prior.transform_to_original(scaled_samples)
 
-    def get_x_vals(self, theta: torch.Tensor, is_scaled: bool = True):
+    def get_x_vals(self, theta: torch.Tensor, is_scaled: bool = False):
         """
         Get simulation outputs for given parameters.
         
@@ -112,13 +188,6 @@ class MaCh3SBIInterface:
             theta_original = self._prior.transform_to_original(theta)
         else:
             theta_original = theta
-        
-        # Enforce boundary conditions by clipping to bounds
-        theta_original = torch.clamp(
-            theta_original,
-            min=self._prior.lower_bounds,
-            max=self._prior.upper_bounds
-        )
         
         # Convert to numpy array on CPU for simulation
         theta_cpu = theta_original.cpu().numpy()
@@ -158,7 +227,11 @@ class MaCh3SBIInterface:
         Sample from proposal and get corresponding simulations.
         Returns samples in scaled space for SBI.
         """
-        theta_scaled = self._proposal.sample((self._samples_per_round, ), **kwargs)
+        if self._proposal == self._prior:
+            theta_scaled = self.sample(self._prior_samples,  **kwargs)
+        else:
+            theta_scaled = self.sample(self._samples_per_round, **kwargs)
+        
         x, theta_scaled = self.get_x_vals(theta_scaled, is_scaled=True)
         return x, theta_scaled
     
@@ -305,6 +378,7 @@ def set_inference(inference_cls, **inference_kwargs):
             self, 
             mach3_interface, 
             n_rounds, 
+            prior_samples,
             samples_per_round, 
             autosave_interval=-1, 
             output_file=Path("model_output.pkl"),
@@ -317,6 +391,7 @@ def set_inference(inference_cls, **inference_kwargs):
                 mach3_interface, 
                 inference_method=None, 
                 n_rounds=n_rounds,
+                prior_samples = prior_samples,
                 samples_per_round=samples_per_round,
                 autosave_interval=autosave_interval,
                 output_file=output_file,
@@ -359,7 +434,8 @@ def set_inference_embedding(inference_cls, embedding_cls, nn_type="mdn", nn_args
             self, 
             mach3_interface, 
             n_rounds, 
-            samples_per_round, 
+            prior_samples,
+            samples_per_round,
             autosave_interval=-1, 
             output_file=Path("model_output.pkl"),
             scaling="none",
@@ -371,6 +447,7 @@ def set_inference_embedding(inference_cls, embedding_cls, nn_type="mdn", nn_args
                 mach3_interface, 
                 inference_method=None, 
                 n_rounds=n_rounds,
+                prior_samples = prior_samples,
                 samples_per_round=samples_per_round,
                 autosave_interval=autosave_interval,
                 output_file=output_file,

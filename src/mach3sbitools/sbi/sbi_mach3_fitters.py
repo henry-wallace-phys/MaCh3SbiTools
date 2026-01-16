@@ -1,16 +1,20 @@
+from pathlib import Path
+
 from sbi.inference import NPE, NPE_A, NPE_B, FMPE, NLE, NPSE
 from sbi.utils import RestrictedPrior, get_density_thresholder
 from sbi.inference.posteriors.posterior_parameters import VIPosteriorParameters
 from sbi.neural_nets.embedding_nets import FCEmbedding
-
+from sbi.neural_nets import posterior_flow_nn
 
 from mach3sbitools.sbi.sbi_mach3_interface import MaCh3SBIInterface, set_inference, set_inference_embedding
+
+
  
 __NN_ARGS__={
-    'num_bins': 80,
-    'hidden_features': 256,
+    'num_bins': 25,
+    'hidden_features': 128,
     'num_transforms': 20,
-    'num_components': 50
+    'num_components': 30
 }
  
 '''
@@ -63,12 +67,7 @@ class NeuralPosteriorScoreEstimation(MaCh3SBIInterface):
             raise ValueError("Neural Posterior Score Estimation currently only supports single round training!")
         super().train(sampling_settings, training_settings)
 
-@set_inference(FMPE)
-class FlowMatching(MaCh3SBIInterface):    
-    def train(self, sampling_settings, training_settings):
-        if self._n_rounds>1:
-            raise ValueError("Flow Matching currently only supports single round training!")
-        super().train(sampling_settings, training_settings)
+
         
 # Neural Likelihoods
 @set_inference(NLE)
@@ -77,3 +76,42 @@ class VariationalLikelihoodEstimator(MaCh3SBIInterface):
         sampling_settings['posterior_parameters'] = VIPosteriorParameters(vi_method="fKL")
         super().training_iter(sampling_settings, training_settings)
         self._proposal = self._posterior.train()
+        
+# FMPE, this is a tad hacky as it doesn't have a "standard" training type
+class FlowMatching(MaCh3SBIInterface):
+    def __init__(
+        self, 
+        mach3_interface, 
+        n_rounds: int, 
+        prior_samples: int,
+        samples_per_round: int,
+        autosave_interval: int = -1, 
+        output_file: Path = Path("model_output.pkl"),
+        scaling: str = "none"
+    ):
+        net_builder = posterior_flow_nn(
+            model="mlp",
+            num_layers=15,
+            hidden_features=64,
+            # embedding_net=CNNEmbedding  # e.g., for image data.
+        )
+        # Now we set up the FMPE
+       
+
+        super().__init__(
+            mach3_interface,
+            None,
+            n_rounds,
+            prior_samples,
+            samples_per_round,
+            autosave_interval,
+            output_file,
+            scaling
+        )
+        
+        self._inference = FMPE(self._prior, vf_estimator=net_builder, device=self.device_handler.device)
+        
+    def train(self, sampling_settings, training_settings):
+        x, theta = self.simulate()
+        self._inference.append_simulations(theta, x).train(**training_settings)
+        self._posterior = self._inference.build_posterior(**sampling_settings)

@@ -11,18 +11,19 @@ import click
 @click.option('--fit_type', '-f', default='truncated_proposal')
 @click.option('--autosave_interval', '-a', default=-1)
 @click.option('--n_rounds', '-n', default=100)
+@click.option('--prior_samples', '-p', default=100)
 @click.option('--samples_per_round', '-s', default=100)
-def main(input_file: str, mach3_type: str, fit_type: str, output_file: str, autosave_interval: int, n_rounds: int, samples_per_round: int):
+def main(input_file: str, mach3_type: str, fit_type: str, output_file: str, autosave_interval: int, n_rounds: int, prior_samples: int, samples_per_round: int):
     ui = MaCh3SbiUI(Path(input_file), mach3_type)
     print(f"Running fit from {input_file}. Saving every {autosave_interval} steps. Running {n_rounds} rounds with {samples_per_round} samples per round")
     
-    ui.run_fit(fit_type,
+    ui.initialise_fitter(fit_type,
                n_rounds=n_rounds,
+               prior_samples=prior_samples,
                samples_per_round=samples_per_round,
-               sampling_settings={},
-               training_settings={},
                autosave_interval=autosave_interval,
                output_file=Path(output_file))
+    ui.train()
     
     ui.fitter.save(Path(output_file))
     
