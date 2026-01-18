@@ -8,7 +8,7 @@ wheels/
 *.ipynb_checkpoints*
 *.venv*
 notebooks/*logs*
-
+sbi-logs
 
 # Virtual environments
 .venv
