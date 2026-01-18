@@ -12,3 +12,9 @@ notebooks/*logs*
 
 # Virtual environments
 .venv
+
+# Saved files etc
+*.out
+*.err
+*.pkl
+*.pdf
