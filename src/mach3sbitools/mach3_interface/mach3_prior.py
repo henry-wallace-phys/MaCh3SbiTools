@@ -4,10 +4,8 @@ with parameter scaling for improved neural network training using PyTorch transf
 """
 
 import torch
-from typing import List, Tuple, Optional, Literal
-from torch.distributions import Independent, Normal, Uniform, TransformedDistribution
-from torch.distributions.transforms import AffineTransform
-
+from typing import List, Tuple, Optional
+from torch.distributions import Independent, Normal, Uniform, constraints
 
 class MaCh3Prior(torch.distributions.Distribution):
     """
@@ -27,7 +25,6 @@ class MaCh3Prior(torch.distributions.Distribution):
         bounds: Tuple[List[float], List[float]],
         parameter_names: Optional[List[str]] = None,
         device: str = "cpu",
-        scaling: Literal["none", "standardise", "normalise"] = "none"
     ):
         """
         Args:
@@ -49,7 +46,6 @@ class MaCh3Prior(torch.distributions.Distribution):
         self.parameter_names = parameter_names or [f"param_{i}" for i in range(len(nominals))]
         
         self.n_params = len(nominals)
-        self.scaling_method = scaling
         
         # Identify which parameters have Gaussian vs flat priors
         self.gaussian_mask = self.errors > 0
@@ -62,22 +58,9 @@ class MaCh3Prior(torch.distributions.Distribution):
             raise ValueError("Each parameter must be either Gaussian (error > 0) or flat (error = -1)")
         
         # Compute scaling parameters
-        self._compute_scaling()
         
         # Build the base prior distribution (in original space)
-        self._build_base_prior()
-        
-        # Apply scaling transform if needed
-        if self.scaling_method != "none":
-            # Create inverse transform: scaled = (original - loc) / scale
-            # For TransformedDistribution, we need the forward transform: original = scaled * scale + loc
-            # So we create the inverse and then use TransformedDistribution
-            self._prior = TransformedDistribution(
-                self._base_prior,
-                AffineTransform(loc=-self.scale_loc / self.scale_scale, scale=1.0 / self.scale_scale)
-            )
-        else:
-            self._prior = self._base_prior
+        self._build_prior()
         
         # Initialize parent class
         super().__init__(
@@ -85,47 +68,14 @@ class MaCh3Prior(torch.distributions.Distribution):
             event_shape=self._prior.event_shape,
             validate_args=False
         )
-    
-    def _compute_scaling(self):
-        """Compute scaling parameters for each dimension."""
-        self.scale_loc = torch.zeros(self.n_params, device=self.device)
-        self.scale_scale = torch.ones(self.n_params, device=self.device)
         
-        if self.scaling_method == "none":
-            # No scaling
-            pass
-            
-        elif self.scaling_method == "standardise":
-            # Scale to mean=0, std=1
-            # For Gaussian parameters: use nominal as mean, error as std
-            # For flat parameters: use midpoint as mean, range/sqrt(12) as std (uniform std)
-            
-            for i in range(self.n_params):
-                if self.gaussian_mask[i]:
-                    self.scale_loc[i] = self.nominals[i]
-                    self.scale_scale[i] = self.errors[i]
-                else:
-                    # Uniform distribution
-                    midpoint = (self.lower_bounds[i] + self.upper_bounds[i]) / 2
-                    # Standard deviation of uniform distribution: (b-a)/sqrt(12)
-                    std = (self.upper_bounds[i] - self.lower_bounds[i]) / (2 * torch.sqrt(torch.tensor(3.0, device=self.device)))
-                    self.scale_loc[i] = midpoint
-                    self.scale_scale[i] = std
-                    
-        elif self.scaling_method == "normalise":
-            # Scale to [0, 1] based on bounds
-            self.scale_loc = self.lower_bounds
-            self.scale_scale = self.upper_bounds - self.lower_bounds
-            
-        else:
-            raise ValueError(f"Unknown scaling method: {self.scaling_method}")
     
-    def _build_base_prior(self):
+    def _build_prior(self):
         """Construct the base prior distribution in original parameter space."""
         
         if self.n_flat == 0:
             # All Gaussian - use bounded Gaussian
-            self._base_prior = BoundedGaussianPrior(
+            self._prior = BoundedGaussianPrior(
                 nominals=self.nominals,
                 errors=self.errors,
                 lower_bounds=self.lower_bounds,
@@ -136,7 +86,7 @@ class MaCh3Prior(torch.distributions.Distribution):
             
         elif self.n_gaussian == 0:
             # All flat
-            self._base_prior = Independent(
+            self._prior = Independent(
                 Uniform(low=self.lower_bounds, high=self.upper_bounds),
                 1
             )
@@ -144,7 +94,7 @@ class MaCh3Prior(torch.distributions.Distribution):
             
         else:
             # Mixed prior
-            self._base_prior = MixedPrior(
+            self._prior = MixedPrior(
                 nominals=self.nominals,
                 errors=self.errors,
                 lower_bounds=self.lower_bounds,
@@ -154,34 +104,6 @@ class MaCh3Prior(torch.distributions.Distribution):
                 device=self.device
             )
             self.prior_type = "mixed"
-    
-    def transform_to_original(self, scaled_params: torch.Tensor) -> torch.Tensor:
-        """
-        Transform parameters from scaled space back to original space.
-        
-        Args:
-            scaled_params: Parameters in scaled space (shape: [..., n_params])
-            
-        Returns:
-            Parameters in original space (shape: [..., n_params])
-        """
-        if self.scaling_method == "none":
-            return scaled_params
-        return scaled_params * self.scale_scale + self.scale_loc
-    
-    def transform_to_scaled(self, original_params: torch.Tensor) -> torch.Tensor:
-        """
-        Transform parameters from original space to scaled space.
-        
-        Args:
-            original_params: Parameters in original space (shape: [..., n_params])
-            
-        Returns:
-            Parameters in scaled space (shape: [..., n_params])
-        """
-        if self.scaling_method == "none":
-            return original_params
-        return (original_params - self.scale_loc) / self.scale_scale
     
     @property
     def support(self):
@@ -200,45 +122,7 @@ class MaCh3Prior(torch.distributions.Distribution):
         """Compute log probability of value under the prior (value in scaled space if scaling is enabled)."""
         return self._prior.log_prob(value)
     
-    def get_info(self):
-        """Get information about the prior."""
-        info = {
-            "n_params": self.n_params,
-            "n_gaussian": self.n_gaussian,
-            "n_flat": self.n_flat,
-            "prior_type": self.prior_type,
-            "scaling_method": self.scaling_method,
-            "parameter_names": self.parameter_names
-        }
-        
-        # Add scaling info
-        if self.scaling_method != "none":
-            info["scaling"] = {
-                "scale_loc": self.scale_loc.cpu().numpy().tolist(),
-                "scale_scale": self.scale_scale.cpu().numpy().tolist()
-            }
-        
-        # Add details for each parameter
-        for i, name in enumerate(self.parameter_names):
-            param_info = {}
-            if self.gaussian_mask[i]:
-                param_info["type"] = "gaussian"
-                param_info["nominal"] = self.nominals[i].item()
-                param_info["error"] = self.errors[i].item()
-                param_info["bounds"] = (self.lower_bounds[i].item(), self.upper_bounds[i].item())
-            else:
-                param_info["type"] = "flat"
-                param_info["bounds"] = (self.lower_bounds[i].item(), self.upper_bounds[i].item())
-            
-            if self.scaling_method != "none":
-                param_info["scale_loc"] = self.scale_loc[i].item()
-                param_info["scale_scale"] = self.scale_scale[i].item()
-                
-            info[name] = param_info
-        
-        return info
-    
-    def check_bounds(self, params: torch.Tensor, is_scaled: bool = False) -> torch.Tensor:
+    def check_bounds(self, params: torch.Tensor) -> torch.Tensor:
         """
         Check if parameters are within bounds.
         
@@ -249,9 +133,6 @@ class MaCh3Prior(torch.distributions.Distribution):
         Returns:
             Boolean tensor indicating which samples are in bounds (shape: [...])
         """
-        if is_scaled and self.scaling_method != "none":
-            params = self.transform_to_original(params)
-        
         in_bounds = (params >= self.lower_bounds) & (params <= self.upper_bounds)
         return in_bounds.all(dim=-1)
 
@@ -289,7 +170,6 @@ class BoundedGaussianPrior(torch.distributions.Distribution):
     @property
     def support(self):
         """Return the support of the distribution."""
-        from torch.distributions import constraints
         return constraints.independent(
             constraints.interval(self.lower_bounds, self.upper_bounds),
             1
@@ -303,7 +183,6 @@ class BoundedGaussianPrior(torch.distributions.Distribution):
             else:
                 sample_shape = torch.Size([])
         
-        total_samples = sample_shape.numel() if len(sample_shape) > 0 else 1
         samples = torch.zeros(sample_shape + self.event_shape, device=self.device)
         
         # Rejection sampling
@@ -459,7 +338,7 @@ class MixedPrior(torch.distributions.Distribution):
                                  dtype=torch.bool, device=self.device)
             max_iterations = 10000
             
-            for iteration in range(max_iterations):
+            for _ in range(max_iterations):
                 if not remaining.any():
                     break
                 
@@ -521,14 +400,11 @@ class MixedPrior(torch.distributions.Distribution):
             )
             
             log_prob = log_prob + param_log_prob
-        
         return log_prob
 
-
 def create_mach3_prior(
-    wrapper, 
+    mach3_wrapper, 
     device: str = "cpu", 
-    scaling: Literal["none", "standardise", "normalise"] = "none"
 ) -> MaCh3Prior:
     """
     Convenience function to create a prior from a MaCh3DUNEWrapper instance.
@@ -541,9 +417,9 @@ def create_mach3_prior(
     Returns:
         MaCh3Prior object compatible with SBI
     """
-    nominals, errors = wrapper.get_nominal_error()
-    bounds = wrapper.get_bounds()
-    names = wrapper.get_parameter_names()
+    nominals, errors = mach3_wrapper.get_nominal_error()
+    bounds = mach3_wrapper.get_bounds()
+    names = mach3_wrapper.get_parameter_names()
     
     return MaCh3Prior(
         nominals=nominals,
@@ -551,5 +427,4 @@ def create_mach3_prior(
         bounds=bounds,
         parameter_names=names,
         device=device,
-        scaling=scaling
     )
