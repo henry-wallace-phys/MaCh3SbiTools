@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Optional, List
 
 from tqdm import tqdm
 import pyarrow as pa
@@ -12,11 +12,11 @@ from mach3sbitools.utils.device_handler import TorchDeviceHander
 
 
 class MaCh3Simulator:
-    def __init__(self, mach3_name: str, config_file: Path):
+    def __init__(self, mach3_name: str, config_file: Path, nuisance_pars: Optional[List[str]]=None):
         device_handler = TorchDeviceHander()
         self._mach3_type = mach3_name
         self.mach3_wrapper = get_mach3_wrapper(mach3_name, config_file)
-        self.prior = create_mach3_prior(self.mach3_wrapper, device_handler.device)
+        self.prior = create_mach3_prior(self.mach3_wrapper, device_handler.device, nuisance_pars=nuisance_pars)
     
     def simulate_mach3(self, n_samples: int) -> Tuple[Iterable, Iterable]:
         """
@@ -42,7 +42,7 @@ class MaCh3Simulator:
                 valid_theta.append(t)
                 valid_x.append(np.random.poisson(x))
             except Exception:
-                continue
+                print("Error: Bad simulation! Skipping sample.")
 
         return valid_theta, valid_x
 
@@ -60,5 +60,7 @@ class MaCh3Simulator:
         feather.write_feather(table, str(file_path))
 
     def __call__(self, n_samples: int, file_path: Path) -> None:
+        print(f"Starting simulation of {n_samples} samples from MaCh3: {self._mach3_type}")
         theta, x = self.simulate_mach3(n_samples)
+        print("Simulation complete. Saving to Arrow file...")
         self.save_to_arrow(file_path, theta, x)

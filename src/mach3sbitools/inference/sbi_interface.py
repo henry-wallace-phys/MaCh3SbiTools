@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 import torch
 import pickle as pkl
+import fnmatch
+import numpy as np
 
 from sbi.inference import NPE
 from sbi.neural_nets import posterior_nn
@@ -11,8 +13,10 @@ from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
 from mach3sbitools.utils.device_handler import TorchDeviceHander
 
 class MaCh3SBIInterface:
-    def __init__(self, mach3_name: str, config_file: Path):
-        self.simulator = MaCh3Simulator(mach3_name, config_file)
+    def __init__(self, mach3_name: str, config_file: Path, nuisance_pars: Optional[List[str]]=None):
+        self.simulator = MaCh3Simulator(mach3_name, config_file, nuisance_pars)
+        
+        self.nuisance_pars = nuisance_pars
         self.mach3_name = mach3_name
         
         self.dataset = None
@@ -21,6 +25,9 @@ class MaCh3SBIInterface:
         
         self._density_estimator = None
         self.device_handler = TorchDeviceHander()
+        
+        self._curr_x = None
+        self._curr_theta = None
         
     def set_dataset(self, data_folder: Path) -> None:
         self.dataset = ParaketDataset(data_folder)
@@ -45,7 +52,7 @@ class MaCh3SBIInterface:
 
         self.inference = NPE(prior=self.simulator.prior, density_estimator=neural_net, device=self.device_handler.device)
 
-    def append_data(self, idx: int, nuisance_vars: List[str]) -> None:
+    def append_data(self, idx: int, data_device='cpu') -> None:
         if self.dataset is None:
             raise ValueError("Dataset not set. Please set the dataset using set_dataset method before appending data.")
 
@@ -53,20 +60,20 @@ class MaCh3SBIInterface:
             raise ValueError("Posterior not created. Please create the posterior using create_posterior method before appending data.")
     
         theta, x = self.dataset[idx]
-        if nuisance_vars is not None:
-            # Nuisance vars filter by substring i.e. if "xsec_" is in the param name, it is a nuisance var
-            theta = [
-                t for t, name in zip(theta, self.simulator.mach3_wrapper.get_parameter_names())
-                if not any(nuisance in name for nuisance in nuisance_vars)
-            ]
+        parameter_names = self.simulator.mach3_wrapper.get_parameter_names()
+        if self.nuisance_pars is not None:
+            mask = [not any(fnmatch.fnmatch(name, n)for n in self.nuisance_pars) for name in parameter_names]
+            theta = theta[:, mask]
 
-        theta = torch.tensor([theta], dtype=torch.float32, device='cpu')
-        x = torch.tensor([x], dtype=torch.float32, device='cpu')
+        if self._curr_x is None:
+            self._curr_x = x.to(data_device)
+            self._curr_theta = theta.to(data_device)
 
-        self.inference.append_simulations(theta, x)
+        else:
+            self._curr_x = torch.cat([self._curr_x, x.to(data_device)], dim=0)
+            self._curr_theta = torch.cat([self._curr_theta, theta.to(data_device)], dim=0)
 
-    def train_posterior(self, save_file: Path | None = None, checkpoint_interval: int = 100,
-                        lr_decay: float = 0.1, min_lr: float = 1e-6, **kwargs) -> None:
+    def train_posterior(self, save_file: Path | None = None, **kwargs) -> None:
         if self.dataset is None:
             raise ValueError("Dataset not set. Please set the dataset using set_dataset method before training.")
         if self.inference is None:
@@ -75,41 +82,24 @@ class MaCh3SBIInterface:
         if save_file is None:
             save_file = Path(f"{self.mach3_name}_sbi_inference.pkl")
         
+        if self._curr_x is None or self._curr_theta is None:
+            raise ValueError("No data appended. Please append data using append_data method before training.")
         
-        max_num_epochs = kwargs.get('max_num_epochs', 100)
-        learning_rate = kwargs.get('learning_rate', 1e-4)
-        
-        while True:
-            d = self.inference.train(**kwargs)
-            self.save_inference(save_file)
-            
-            # We're still going
-            if (self.inference.epoch-1) == max_num_epochs :
-                max_num_epochs += checkpoint_interval
-                kwargs['max_num_epochs'] = max_num_epochs
-                continue
-            
-            if learning_rate >= min_lr:
-                learning_rate *= lr_decay
-                kwargs['learning_rate'] = learning_rate
-                kwargs['max_num_epochs'] += checkpoint_interval
-                continue
- 
-            break
-        
-        print(f"Training complete after {self.inference.epoch} epochs. Inference saved to {save_file}.")
+        self.inference.append_simulations(self._curr_theta, self._curr_x, data_device=self._curr_theta.device)
+        self._curr_x = self._curr_theta = None  # Clear current data after appending
+                
+        d = self.inference.train(**kwargs)
         self._density_estimator = d
+        self.save_inference(save_file)
+        print(f"Training complete after {self.inference.epoch} epochs. Inference saved to {save_file}.")
     
-    
-    def build_posterior(self) -> None:
-        if self._density_estimator is None:
-            raise ValueError("Density estimator not trained. Please train the density estimator using train_posterior method before building the posterior.")
-        
+    def build_posterior(self) -> None:        
         self.posterior = self.inference.build_posterior(self._density_estimator)
     
     def sample_posterior(self, num_samples: int = 1000, x: List[float] | None = None, **kwargs) -> torch.Tensor:
-        if self.posterior is None:
-            raise ValueError("Posterior not built. Please build the posterior using build_posterior method before sampling.")
+        print(f"Generating {num_samples} from posterior")
+        
+        self.posterior = self.inference.build_posterior(self._density_estimator)
         
         if x is None:
             x = self.simulator.mach3_wrapper.get_data_bins()

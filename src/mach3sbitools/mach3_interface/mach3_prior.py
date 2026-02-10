@@ -4,8 +4,11 @@ with parameter scaling for improved neural network training using PyTorch transf
 """
 
 import torch
+import fnmatch
 from typing import List, Tuple, Optional
+
 from torch.distributions import Independent, Normal, Uniform, constraints
+
 
 class MaCh3Prior(torch.distributions.Distribution):
     """
@@ -23,6 +26,8 @@ class MaCh3Prior(torch.distributions.Distribution):
         nominals: List[float],
         errors: List[float],
         bounds: Tuple[List[float], List[float]],
+        flat_pars: List[bool],
+        nuisance_pars: Optional[List[str]],
         parameter_names: Optional[List[str]] = None,
         device: str = "cpu",
     ):
@@ -38,18 +43,24 @@ class MaCh3Prior(torch.distributions.Distribution):
                 - "standardise": Scale to mean=0, std=1 (recommended for mixed priors)
                 - "normalise": Scale to [0, 1] based on bounds
         """
-        self.device = device
-        self.nominals = torch.tensor(nominals, dtype=torch.float32, device=device)
-        self.errors = torch.tensor(errors, dtype=torch.float32, device=device)
-        self.lower_bounds = torch.tensor(bounds[0], dtype=torch.float32, device=device)
-        self.upper_bounds = torch.tensor(bounds[1], dtype=torch.float32, device=device)
         self.parameter_names = parameter_names or [f"param_{i}" for i in range(len(nominals))]
+
+        if nuisance_pars is not None:
+            mask = [not any(fnmatch.fnmatch(name, n)for n in nuisance_pars) for name in self.parameter_names]
+        else:
+            mask = [True]*len(self.parameter_names)
+
+        self.device = device
+        self.nominals = torch.tensor(nominals, dtype=torch.float32, device=device)[mask]
+        self.errors = torch.tensor(errors, dtype=torch.float32, device=device)[mask]
+        self.lower_bounds = torch.tensor(bounds[0], dtype=torch.float32, device=device)[mask]
+        self.upper_bounds = torch.tensor(bounds[1], dtype=torch.float32, device=device)[mask]
         
         self.n_params = len(nominals)
         
         # Identify which parameters have Gaussian vs flat priors
-        self.gaussian_mask = self.errors > 0
-        self.flat_mask = self.errors < 0
+        self.flat_mask = torch.tensor(flat_pars, dtype=torch.bool)[mask]
+        self.gaussian_mask = ~self.flat_mask
         
         self.n_gaussian = self.gaussian_mask.sum().item()
         self.n_flat = self.flat_mask.sum().item()
@@ -405,6 +416,7 @@ class MixedPrior(torch.distributions.Distribution):
 def create_mach3_prior(
     mach3_wrapper, 
     device: str = "cpu", 
+    nuisance_pars: List[str] | None = None
 ) -> MaCh3Prior:
     """
     Convenience function to create a prior from a MaCh3DUNEWrapper instance.
@@ -421,10 +433,14 @@ def create_mach3_prior(
     bounds = mach3_wrapper.get_bounds()
     names = mach3_wrapper.get_parameter_names()
     
+    flat_pars = [mach3_wrapper.get_is_flat(i) for i in range(len(names))]    
+    
     return MaCh3Prior(
         nominals=nominals,
         errors=errors,
         bounds=bounds,
+        flat_pars = flat_pars,
+        nuisance_pars = nuisance_pars,
         parameter_names=names,
         device=device,
     )

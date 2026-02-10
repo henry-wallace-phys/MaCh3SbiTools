@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 
 class MaCh3ImportError(Exception):
     """Custom exception for MaCh3 import errors."""
