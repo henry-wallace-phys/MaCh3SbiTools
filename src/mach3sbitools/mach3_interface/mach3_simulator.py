@@ -8,15 +8,17 @@ import numpy as np
 
 from mach3sbitools.mach3_interface.mach3_importer import get_mach3_wrapper
 from mach3sbitools.mach3_interface.mach3_prior import create_mach3_prior
-from mach3sbitools.utils.device_handler import TorchDeviceHander
+from mach3sbitools.utils.device_handler import TorchDeviceHandler
 
 
 class MaCh3Simulator:
-    def __init__(self, mach3_name: str, config_file: Path, nuisance_pars: Optional[List[str]]=None):
-        device_handler = TorchDeviceHander()
+    def __init__(self, mach3_name: str, config_file: Path, nuisance_pars: Optional[List[str]]=None, cyclical_pars: List[str] | None = None):
+        device_handler = TorchDeviceHandler()
         self._mach3_type = mach3_name
         self.mach3_wrapper = get_mach3_wrapper(mach3_name, config_file)
-        self.prior = create_mach3_prior(self.mach3_wrapper, device_handler.device, nuisance_pars=nuisance_pars)
+                
+        self.prior = create_mach3_prior(self.mach3_wrapper, device_handler.device,
+                                        nuisance_pars=nuisance_pars, cyclical_pars=cyclical_pars)
     
     def simulate_mach3(self, n_samples: int) -> Tuple[Iterable, Iterable]:
         """

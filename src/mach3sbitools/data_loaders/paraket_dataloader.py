@@ -1,59 +1,50 @@
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, TensorDataset
 from pathlib import Path
 from pyarrow import feather
-from matplotlib import pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
-from tqdm import tqdm
 import torch
+from tqdm import tqdm
 
 class ParaketDataset(Dataset):
+    """File-level dataset — one __getitem__ = one feather file.
+    Use .to_tensor_dataset() before training."""
+
     def __init__(self, data_folder: Path):
         self.data_folder = data_folder
-        self.files = list(data_folder.glob("*.feather"))
-        
+        self.files = sorted(data_folder.glob("*.feather"))
+
     def __len__(self):
         return len(self.files)
-    
+
     def __getitem__(self, idx):
-        file_path = self.files[idx]
-        table = feather.read_feather(str(file_path))
-        
-        # Cannot directly to_numpy without error
+        table = feather.read_feather(str(self.files[idx]))
         theta = np.array(table['theta'].to_list(), dtype=np.float32)
         x = np.array(table['x'].to_list(), dtype=np.float32)
-        return torch.tensor(theta), torch.tensor(x)
-    
-    def make_data_plot(self):
-        # We concatenate all data for plotting then make histograms for each dimension and save to a PDF
-        all_theta = []
-        all_x = []
-        for idx in tqdm(range(len(self)), desc="loading dataset"):
+        return torch.from_numpy(theta), torch.from_numpy(x)
+
+    def to_tensor_dataset(
+        self,
+        device: str = 'cpu',
+        nuisance_mask: torch.BoolTensor | None = None,
+    ) -> TensorDataset:
+        """
+        Load all feather files into RAM once and return a flat TensorDataset.
+        Optionally mask out nuisance parameters from theta.
+        """
+        all_theta, all_x = [], []
+
+        for idx in tqdm(range(len(self)), desc="Pre-loading dataset"):
             theta, x = self[idx]
-            all_theta.extend(theta)
-            all_x.extend(x)
-        
-        print("Making into np array")
-        x = np.array(all_x)
-        theta = np.array(all_theta)
-        
-        with PdfPages(self.data_folder / "model_distribution.pdf") as pdf:
-            # We first plot x distribution
-            for dim in tqdm(range(x.shape[1]), desc="plotting x distributions"):
-                plt.figure(figsize=(10, 5))
-                plt.hist(x[:, dim], bins=50, color='green', histtype='step')
-                plt.title(f'X Dimension {dim} Distribution')
-                plt.xlabel('X')
-                plt.ylabel('Frequency')
-                pdf.savefig()
-                plt.close()
-            
-            # We now do the same for theta
-            for dim in tqdm(range(theta.shape[1]), desc="plotting theta distributions"):
-                plt.figure(figsize=(10, 5))
-                plt.hist(theta[:, dim], bins=50, color='blue', histtype='step')
-                plt.title(f'Theta Dimension {dim} Distribution')
-                plt.xlabel('Theta')
-                plt.ylabel('Frequency')
-                pdf.savefig()
-                plt.close()
+            if nuisance_mask is not None:
+                theta = theta[:, nuisance_mask]
+            all_theta.append(theta)
+            all_x.append(x)
+
+        theta_tensor = torch.cat(all_theta, dim=0).to(device)
+        x_tensor = torch.cat(all_x, dim=0).to(device)
+
+        print(f"Loaded {theta_tensor.shape[0]:,} simulations | "
+              f"θ: {theta_tensor.shape[1]}D  x: {x_tensor.shape[1]}D | "
+              f"RAM: {(theta_tensor.nbytes + x_tensor.nbytes) / 1e9:.2f} GB")
+
+        return TensorDataset(theta_tensor, x_tensor)
