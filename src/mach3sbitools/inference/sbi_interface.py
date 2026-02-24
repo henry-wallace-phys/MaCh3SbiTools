@@ -117,22 +117,36 @@ class MaCh3SBIInterface:
     def train_posterior(
         self,
         config: TrainingConfig,
+        resume_checkpoint: Optional[Path] = None,
     ) -> None:
         """
         Train the posterior density estimator using the custom training loop.
 
         Args:
-            config: TrainingConfig object containing all training parameters.
+            config:            TrainingConfig object containing all training parameters.
+            resume_checkpoint: Path to a checkpoint file produced by SBITrainer.save_checkpoint().
+                               All training state (weights, optimizer, scheduler, scaler,
+                               epoch counter, best val loss, early-stop counter) is restored
+                               so training continues seamlessly from where it left off.
+                               When provided, create_posterior() does not need to have been
+                               called first — the density estimator is rebuilt automatically
+                               from the data dimensions and then loaded from the checkpoint.
         """
         if self._tensor_dataset is None:
             raise ValueError("Call load_training_data() before train_posterior().")
+
+        # If resuming without a live inference object, we need to reconstruct it.
+        if resume_checkpoint is not None and self.inference is None:
+            raise ValueError(
+                "Call create_posterior() before train_posterior() so the network "
+                "architecture is defined. Weights will be overwritten by the checkpoint."
+            )
+
         if self.inference is None:
             raise ValueError("Call create_posterior() before train_posterior().")
 
-        save_file = config.save_path or Path(f"{self.mach3_name}_best.pt")
-
         # Build the raw density estimator network from sbi,
-        # using a small sample to infer theta/x dimensions
+        # using a small sample to infer theta/x dimensions.
         sample_theta = self._tensor_dataset.tensors[0][:100]
         sample_x = self._tensor_dataset.tensors[1][:100]
         density_estimator = self.inference._build_neural_net(sample_theta, sample_x)
@@ -146,6 +160,7 @@ class MaCh3SBIInterface:
         self._density_estimator = trainer.train(
             density_estimator,
             config,
+            resume_checkpoint=resume_checkpoint,
         )
 
     # ── Posterior sampling ────────────────────────────────────────────────────
@@ -173,7 +188,6 @@ class MaCh3SBIInterface:
         return self.posterior.sample((num_samples,), x=x_tensor, **kwargs)
 
     # ── Persistence ───────────────────────────────────────────────────────────
-
     def save_density_estimator(self, file_path: Path) -> None:
         """Save just the trained network weights."""
         if self._density_estimator is None:

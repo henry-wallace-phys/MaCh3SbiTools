@@ -10,7 +10,7 @@ class TrainingConfig:
     batch_size: int = 2048
     learning_rate: float = 5e-4
     max_epochs: int = 500
-    stop_after_epochs: int = 50
+    stop_after_epochs: int = 100
     validation_fraction: float = 0.1
     num_workers: int = 4
     autosave_every: int = 10
@@ -19,7 +19,7 @@ class TrainingConfig:
     print_interval: int = 1
     show_progress_bar: bool = False
     tensorboard_dir: Optional[Path] = None
-    scheduler_patience: int = 10
+    scheduler_patience: int = 20
     show_epoch_progress: bool = True
 
 
