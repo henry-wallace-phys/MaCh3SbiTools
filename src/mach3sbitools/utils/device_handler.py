@@ -5,7 +5,7 @@ import pandas as pd
 class TensorConversionError(Exception):
     ...
 
-class TorchDeviceHander:
+class TorchDeviceHandler:
     def __init__(self):
         self._device = self._find_device()
     
@@ -16,8 +16,6 @@ class TorchDeviceHander:
     def _find_device(self):
         if torch.cuda.is_available():
             return "cuda"
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"  # Apple Silicon [let's be fancy!]
         else:
             return "cpu"
 
