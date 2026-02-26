@@ -21,7 +21,9 @@ class TrainingConfig:
     tensorboard_dir: Optional[Path] = None
     scheduler_patience: int = 20
     show_epoch_progress: bool = True
-
+    compile: bool = False
+    warmup_epochs: int = 5
+    ema_alpha = 0.05
 
 @dataclass
 class PosteriorConfig:
@@ -32,3 +34,4 @@ class PosteriorConfig:
     dropout_probability: float = 0.1
     num_blocks: int = 2
     num_bins: int = 10
+    

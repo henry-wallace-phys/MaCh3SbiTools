@@ -13,7 +13,8 @@ from sbi.neural_nets import posterior_nn
 from mach3sbitools.mach3_interface.mach3_simulator import MaCh3Simulator
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
 from mach3sbitools.utils.device_handler import TorchDeviceHandler
-from mach3sbitools.inference.sbi_trainer import SBITrainer
+from .sbi_trainer import SBITrainer
+from .sbi_trainer_legacy import SBITrainerLegacy
 from mach3sbitools.utils.config import TrainingConfig, PosteriorConfig
 from mach3sbitools.utils.logger import get_logger
 
@@ -86,7 +87,7 @@ class MaCh3SBIInterface:
         config: PosteriorConfig,
     ) -> None:
         """
-        Build the NPE inference object and NSF density estimator.
+        Build the NPE inference object and density estimator.
 
         Args:
             config: PosteriorConfig object containing model parameters.
@@ -107,7 +108,7 @@ class MaCh3SBIInterface:
         )
 
         logger.info(
-            f"NPE created | NSF | "
+            f"NPE created | {config.model} | "
             f"hidden=[cyan]{config.hidden_features}[/] transforms=[cyan]{config.num_transforms}[/] "
             f"blocks=[cyan]{config.num_blocks}[/] bins=[cyan]{config.num_bins}[/]"
         )
@@ -117,7 +118,8 @@ class MaCh3SBIInterface:
     def train_posterior(
         self,
         config: TrainingConfig,
-        resume_checkpoint: Optional[Path] = None,
+        use_legacy: bool = False,
+        # resume_checkpoint: Optional[Path] = None,
     ) -> None:
         """
         Train the posterior density estimator using the custom training loop.
@@ -136,7 +138,7 @@ class MaCh3SBIInterface:
             raise ValueError("Call load_training_data() before train_posterior().")
 
         # If resuming without a live inference object, we need to reconstruct it.
-        if resume_checkpoint is not None and self.inference is None:
+        if config.resume_checkpoint is not None and self.inference is None:
             raise ValueError(
                 "Call create_posterior() before train_posterior() so the network "
                 "architecture is defined. Weights will be overwritten by the checkpoint."
@@ -151,16 +153,23 @@ class MaCh3SBIInterface:
         sample_x = self._tensor_dataset.tensors[1][:100]
         density_estimator = self.inference._build_neural_net(sample_theta, sample_x)
 
-        trainer = SBITrainer(
-            dataset=self._tensor_dataset,
-            config=config,
-            device=self.device_handler.device,
+        if use_legacy:
+            trainer = SBITrainerLegacy(
+                dataset=self._tensor_dataset,
+                config=config,
+                device=self.device_handler.device,
+            )
+        else:
+            trainer = SBITrainer(
+                dataset=self._tensor_dataset,
+                config=config,
+                device=self.device_handler.device,
         )
 
         self._density_estimator = trainer.train(
             density_estimator,
             config,
-            resume_checkpoint=resume_checkpoint,
+            resume_checkpoint=config.resume_checkpoint,
         )
 
     # ── Posterior sampling ────────────────────────────────────────────────────
@@ -187,31 +196,43 @@ class MaCh3SBIInterface:
         )
         return self.posterior.sample((num_samples,), x=x_tensor, **kwargs)
 
-    # ── Persistence ───────────────────────────────────────────────────────────
-    def save_density_estimator(self, file_path: Path) -> None:
-        """Save just the trained network weights."""
-        if self._density_estimator is None:
-            raise ValueError("No density estimator to save.")
-        torch.save(self._density_estimator.state_dict(), file_path)
-        logger.info(f"Density estimator saved → [cyan]{file_path}[/]")
+    def load_posterior(
+        self,
+        checkpoint_path: Path,
+        config: PosteriorConfig,
+    ) -> None:
+        """
+        Load a trained density estimator directly into the interface,
+        ready for sample_posterior(). Dimensions are inferred from the
+        simulator's prior and data bins.
 
-    def load_density_estimator(self, file_path: Path) -> None:
-        """Load weights into an already-created density estimator."""
-        if self._density_estimator is None:
-            raise ValueError("Call create_posterior() before loading weights.")
-        state = torch.load(file_path, map_location=self.device_handler.device)
-        self._density_estimator.load_state_dict(state)
-        self._density_estimator.to(self.device_handler.device)
-        logger.info(f"Density estimator loaded ← [cyan]{file_path}[/]")
+        Args:
+            checkpoint_path: Path to best-model or autosave checkpoint.
+            config:          PosteriorConfig matching the saved architecture.
+        """
+        checkpoint_path = Path(checkpoint_path)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    def save_inference(self, file_path: Path) -> None:
-        """Pickle the full sbi NPE object (for compatibility)."""
-        if self.inference is None:
-            raise ValueError("No inference object to save.")
-        with open(file_path, "wb") as f:
-            pkl.dump(self.inference, f)
+        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        if isinstance(ckpt, dict) and "model_state" in ckpt:
+            state_dict = ckpt["model_state"]
+            logger.info(f"Loading autosave checkpoint from epoch {ckpt['epoch']}")
+        else:
+            state_dict = ckpt
+            logger.info("Loading best-model state dict")
 
-    def load_inference(self, file_path: Path) -> None:
-        """Load a pickled sbi NPE object."""
-        with open(file_path, "rb") as f:
-            self.inference = pkl.load(f)
+        self.create_posterior(config)
+
+        x_dim = len(self.simulator.mach3_wrapper.get_data_bins())
+        theta_dim = self.simulator.prior.event_shape[0]
+        density_estimator = self.inference._build_neural_net(
+            torch.zeros(2, theta_dim),
+            torch.zeros(2, x_dim),
+        )
+
+        density_estimator.load_state_dict(state_dict)
+        density_estimator.to(self.device_handler.device).eval()
+        self._density_estimator = density_estimator
+
+        logger.info(f"Density estimator loaded from [cyan]{checkpoint_path}[/]")

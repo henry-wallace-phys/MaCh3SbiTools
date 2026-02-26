@@ -50,6 +50,10 @@ logger = get_logger("mach3sbitools")
 @click.option('--log-file',        type=Path, default=None, help='Optional path to write logs to file.')
 @click.option('--log-level',       type=click.Choice(['DEBUG', 'INFO', 'WARNING'], case_sensitive=False), default='INFO', show_default=True)
 @click.option('--tensorboard-dir', type=Path, default=None, help='Directory for TensorBoard logs. Omit to disable.')
+
+
+@click.option('--use-legacy', is_flag=True, default=False, help='Use legacy code path (Not recommended.)')
+
 def main(
     mach3_type: str,
     config_file: Path,
@@ -78,6 +82,7 @@ def main(
     log_file: Path,
     log_level: str,
     tensorboard_dir: Path,
+    use_legacy: bool,
 ):
     # ── Initialise logger ────────────────────────────────────────────────────
     MaCh3Logger("mach3sbitools", level=log_level, log_file=log_file)
@@ -122,7 +127,7 @@ def main(
         show_epoch_progress=show_epoch_progress,
         tensorboard_dir=tensorboard_dir,
     )
-    inference.train_posterior(config)
+    inference.train_posterior(config, use_legacy=use_legacy)
 
     # ── Sample ───────────────────────────────────────────────────────────────
     samples = inference.sample_posterior(n_samples)
