@@ -16,13 +16,13 @@ class TrainingConfig:
     autosave_every: int = 10
     resume_checkpoint: Optional[Path] = None
     use_amp: bool = True
-    print_interval: int = 1
+    print_interval: int = 10
     show_progress_bar: bool = False
     tensorboard_dir: Optional[Path] = None
-    scheduler_patience: int = 20
+    scheduler_patience: int = 100
     show_epoch_progress: bool = True
     compile: bool = False
-    warmup_epochs: int = 5
+    warmup_epochs: int = 50
     ema_alpha = 0.05
 
 @dataclass

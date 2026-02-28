@@ -203,11 +203,21 @@ class SBITrainer:
                     optimizer, elapsed, epochs_no_improve,
                 )
 
-                best_state, best_val_loss, epochs_no_improve = self._handle_checkpoints(
-                    ema_val_loss, best_val_loss, epochs_no_improve,
-                    density_estimator, config.save_path, best_state,
+                best_state, best_val_loss, epochs_no_improve = self._handle_best_state(
+                    ema_val_loss, best_val_loss, epochs_no_improve, best_state, density_estimator,
                 )
+                
+                if epochs_no_improve == 0 and config.save_path is not None: 
+                    # Save a checkpoint of the best model whenever we get a new best val loss.
+                    self.save_checkpoint(
+                        epoch, density_estimator, optimizer,
+                        warmup_scheduler, plateau_scheduler, scaler,
+                        best_val_loss, epochs_no_improve, config.save_path,
+                        training_config=config,
+                        use_unique_path=False,  # overwrite previous best
+                    )
 
+                # Also
                 if config.save_path and epoch % config.autosave_every == 0:
                     self.save_checkpoint(
                         epoch, density_estimator, optimizer,
@@ -232,6 +242,14 @@ class SBITrainer:
         if self.writer is not None:
             self.writer.flush()
             self.writer.close()
+
+        self.save_checkpoint(
+            epoch, density_estimator, optimizer,
+            warmup_scheduler, plateau_scheduler, scaler,
+            best_val_loss, epochs_no_improve, config.save_path,
+            training_config=config,
+            use_unique_path=False,  # final checkpoint with best model
+        )
 
         logger.info(f"Training complete. Best val loss: {best_val_loss:.4f}")
         return density_estimator
@@ -310,7 +328,7 @@ class SBITrainer:
 
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             scaler.step(optimizer)
             scaler.update()
 
@@ -329,7 +347,7 @@ class SBITrainer:
     def _validate(self, model: nn.Module) -> float:
         model.eval()
         total_loss = 0.0
-        with torch.no_grad():
+        with torch.inference_mode():
             for theta, x in self.val_loader:
                 theta = theta.to(self.device, non_blocking=True)
                 x = x.to(self.device, non_blocking=True)
@@ -348,21 +366,18 @@ class SBITrainer:
             f"lr: {optimizer.param_groups[0]['lr']:.2e} | {elapsed:.1f}s"
         )
 
-    def _handle_checkpoints(
+    def _handle_best_state(
         self,
         ema_val_loss: float,
         best_val_loss: float,
         epochs_no_improve: int,
-        model: nn.Module,
-        save_path: Optional[Path],
         best_state: Optional[dict],
+        model: nn.Module,
     ) -> tuple[Optional[dict], float, int]:
         if ema_val_loss < best_val_loss:
             best_val_loss = ema_val_loss
             epochs_no_improve = 0
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-            if save_path:
-                torch.save(best_state, save_path)
         else:
             epochs_no_improve += 1
         return best_state, best_val_loss, epochs_no_improve
@@ -379,6 +394,7 @@ class SBITrainer:
         epochs_no_improve: int,
         save_path: Path,
         training_config: TrainingConfig|None = None,
+        use_unique_path: bool = True,
     ) -> None:
         ckpt = {
             "epoch": epoch,
@@ -391,7 +407,10 @@ class SBITrainer:
             "epochs_no_improve": epochs_no_improve,
             "training_config": training_config,
         }
-        ckpt_path = save_path.with_stem(f"{save_path.stem}_epoch{epoch}")
+        if use_unique_path:
+            ckpt_path = save_path.with_stem(f"{save_path.stem}_epoch{epoch}")
+        else:
+            ckpt_path = save_path
         torch.save(ckpt, ckpt_path)
         logger.info(f"Autosaved checkpoint → [cyan]{ckpt_path}[/]")
 
