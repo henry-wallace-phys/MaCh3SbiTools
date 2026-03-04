@@ -236,3 +236,4 @@ class MaCh3SBIInterface:
         self._density_estimator = density_estimator
 
         logger.info(f"Density estimator loaded from [cyan]{checkpoint_path}[/]")
+    
