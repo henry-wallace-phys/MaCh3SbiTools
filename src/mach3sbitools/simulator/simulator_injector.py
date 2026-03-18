@@ -115,8 +115,13 @@ def _hint(name: str, candidates: list[str]) -> str:
 
 
 def get_simulator(module_name: str, class_name: str, config: Path) -> SimulatorProtocol:
-    """Dynamically loads a simulator class, validating it follows SimulatorProtocol."""
-
+    """
+    Dynamically injects a simulator into the package. NOTE it must follow SimulatorProtocol.
+    :param module_name: The name of the module i.e. mymodule.myclass...
+    :param class_name: The name of the simulator class in the module (same as doing from <module_name> import <class_name>
+    :param config: The config file for the simulator. All simulators are required have a config
+    :return:
+    """
     if find_spec(module_name) is None:
         installed = [m.name for m in pkgutil.iter_modules()]
         raise SimulatorImportError(

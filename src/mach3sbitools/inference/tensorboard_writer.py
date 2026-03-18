@@ -4,6 +4,12 @@ from torch.utils.tensorboard import SummaryWriter
 
 class TensorBoardWriter:
     def __init__(self, log_dir: str, device_type: str):
+        """
+        Wrapper class for TensorBoard writer.
+
+        :param log_dir: Path to logs directory
+        :param device_type: Type of device to use
+        """
         self.writer = SummaryWriter(log_dir=log_dir)
         self.device_type = device_type
 
@@ -19,6 +25,20 @@ class TensorBoardWriter:
         epochs_no_improve: int,
         total_samples: int,
     ) -> None:
+        """
+        Add information to the writer
+        :param epoch: Current epoch number
+        :param train_loss: Current training loss
+        :param val_loss: Current validation loss
+        :param ema_val_loss: Current ema validation loss
+        :param best_val_loss: Current best validation loss
+        :param optimizer: Current optimizer
+        :param elapsed: Current elapsed time
+        :param epochs_no_improve: Current number of epochs without improvement
+        :param total_samples: Total number of samples
+        :return:
+        """
+
         if self.writer is None:
             return
 
@@ -82,5 +102,6 @@ class TensorBoardWriter:
         }
 
     def close(self):
+        """Close the writer."""
         self.writer.flush()
         self.writer.close()

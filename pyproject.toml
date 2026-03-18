@@ -23,7 +23,8 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff",
-    "mypy"
+    "mypy",
+    "sphinx"
 ]
 
 

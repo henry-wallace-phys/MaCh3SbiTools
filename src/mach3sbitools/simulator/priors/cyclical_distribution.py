@@ -34,7 +34,7 @@ class CyclicalDistribution(torch.distributions.Distribution):
     @property
     def variance(self) -> torch.Tensor:
         # Calculated from int(pdf*x2)dx using wolfram alpha
-        return torch.Tensor(5.16947)
+        return torch.Tensor([5.16947])
 
     def pdf(self, theta: torch.Tensor) -> torch.Tensor:
         in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)

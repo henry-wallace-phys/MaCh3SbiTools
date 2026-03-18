@@ -29,12 +29,19 @@ class InferenceHandler:
         prior_path: Path,
         nuisance_pars: list[str] | None = None,
     ):
-        self.nuisance_pars = nuisance_pars
+        """
+        The main interface with inference and training within MaCh3SBITools.
+
+        :param prior_path: Path to folder containing your priors
+        :param nuisance_pars: Nuisance parameters to filter by
+        """
+
 
         self.prior = load_prior(prior_path)
         # Might as well grab this from the prior
         self.parameter_names = self.prior.prior_data.parameter_names
 
+        self.nuisance_pars = nuisance_pars
         if nuisance_pars is not None:
             self.prior.set_nuisance_filter(nuisance_pars)
 
@@ -49,7 +56,12 @@ class InferenceHandler:
     # ── Data ─────────────────────────────────────────────────────────────────
 
     def set_dataset(self, data_folder: Path) -> None:
-        """Point the interface at a folder of feather files."""
+        """
+        Set the dataset to use.
+        :param data_folder: Folder containing data
+        :return:
+        """
+
         self.dataset = ParaketDataset(data_folder, self.parameter_names, self.nuisance_pars)
         logger.info(
             f"Dataset set: [bold]{len(self.dataset)}[/] files in [cyan]{data_folder}[/]"
@@ -60,6 +72,10 @@ class InferenceHandler:
         Pre-load all feather files into RAM as a flat TensorDataset.
         Call once before training — avoids repeated disk reads per epoch.
         Data is kept on CPU; pinned-memory DataLoader handles GPU transfers.
+
+        :return:
+        :raises ValueError: The dataset has not been set
+
         """
         if self.dataset is None:
             raise ValueError("Call set_dataset() before load_training_data().")
@@ -78,8 +94,7 @@ class InferenceHandler:
         """
         Build the NPE inference object and density estimator.
 
-        Args:
-            config: PosteriorConfig object containing model parameters.
+        :param config:    PosteriorConfig object containing all training parameters.
         """
         neural_net = posterior_nn(
             model=config.model,
@@ -107,20 +122,13 @@ class InferenceHandler:
     def train_posterior(
         self,
         config: TrainingConfig,
-        # resume_checkpoint: Optional[Path] = None,
     ) -> None:
         """
         Train the posterior density estimator using the custom training loop.
+        :param config:    TrainingConfig object containing all training parameters.
 
-        Args:
-            config:            TrainingConfig object containing all training parameters.
-            resume_checkpoint: Path to a checkpoint file produced by SBITrainer.save_checkpoint().
-                               All training state (weights, optimizer, scheduler, scaler,
-                               epoch counter, best val loss, early-stop counter) is restored
-                               so training continues seamlessly from where it left off.
-                               When provided, create_posterior() does not need to have been
-                               called first — the density estimator is rebuilt automatically
-                               from the data dimensions and then loaded from the checkpoint.
+        :raises ValueError: There is no data loaded.
+        :raises ValueError: The training loop has not been set yet.
         """
         if self._tensor_dataset is None:
             raise ValueError("Call load_training_data() before train_posterior().")
@@ -149,13 +157,16 @@ class InferenceHandler:
 
         self._density_estimator = trainer.train(
             density_estimator,
-            config,
             resume_checkpoint=config.resume_checkpoint,
         )
 
     # ── Posterior sampling ────────────────────────────────────────────────────
 
     def build_posterior(self) -> None:
+        """
+        Build the posterior density estimator using the custom training loop.
+        :return:
+        """
         if self._density_estimator is None:
             raise ValueError("Train or load a density estimator first.")
 
@@ -170,6 +181,14 @@ class InferenceHandler:
         x: list[float],
         **kwargs,
     ) -> torch.Tensor:
+        """
+        Sample from the posterior density estimator.
+
+        :param num_samples: Number of samples to draw
+        :param x: Data point to sample from
+        :param kwargs: Kwargs for sbi.posterior.sample
+        :return:
+        """
         logger.info(f"Sampling [bold]{num_samples:,}[/] points from posterior")
         self.build_posterior()
 
@@ -191,9 +210,8 @@ class InferenceHandler:
         ready for sample_posterior(). Dimensions are inferred from the
         simulator's prior and data bins.
 
-        Args:
-            checkpoint_path: Path to best-model or autosave checkpoint.
-            config:          PosteriorConfig matching the saved architecture.
+        :param checkpoint_path: Path to checkpoint file
+        :param config: PosteriorConfig object containing all posterior parameters
         """
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():

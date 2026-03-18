@@ -17,7 +17,6 @@ class Simulator:
     """
     Wraps around a simulator protocol object.
     """
-
     def __init__(
         self,
         module_name: str,
@@ -26,6 +25,14 @@ class Simulator:
         nuisance_pars: list[str] | None = None,
         cyclical_pars: list[str] | None = None,
     ):
+        """
+        The main simulator interface
+        :param module_name: The name of the module to import i.e. mymodule.submodule. ...
+        :param class_name: The name of the class in the module
+        :param config: The path to the config file (all simulators are required to be configurable)
+        :param nuisance_pars: The parameters to filter out
+        :param cyclical_pars: Parameters which use a cyclical distribution (±2pi)
+        """
 
         self.simulator_wrapper: SimulatorProtocol = get_simulator(
             module_name, class_name, config
@@ -37,7 +44,12 @@ class Simulator:
         )
 
     def simulate(self, n_samples: int) -> tuple[SimulatorData, SimulatorData]:
-        # Generate UP TO n_samples simulations. Some values may cause errors which will be skipped
+        """
+        Generate up to n_samples samples from the simulator.
+
+        :param n_samples: Number of samples to generate
+        :return: theta, x
+        """
         samples = self.prior.sample((n_samples,))
         theta = samples.cpu().numpy()
 
@@ -70,13 +82,10 @@ class Simulator:
     ) -> None:
         """
         Saves the sampled data to an Arrow file.
-
-        Args:
-            file_path (Path): Path to the output Arrow file.
-            theta (Iterable): Sampled theta values.
-            x (Iterable): Sampled x values.
-
-            prior_path (Path, Optional): Where to save the prior data.
+        :param file_path: Path to the output Arrow file
+        :param theta: Sampled theta values
+        :param x: Sampled x values
+        :param prior_path: Where to save the prior data.
         """
         # Save the simulations to a feather file
         to_feather(file_path, theta, x)
@@ -86,12 +95,12 @@ class Simulator:
             self.prior.save(prior_path)
 
     def save_data(self, file_path: Path):
+        """
+        Save "data" generated from the simulator. Useful for testing many data points
+
+        :param file_path: The path to save to
+        :return:
+        """
         file_path.parent.mkdir(parents=True, exist_ok=True)
         data_table = {"data": self.simulator_wrapper.get_data_bins()}
         pq.write_table(data_table, str(file_path))
-
-    def __call__(self, n_samples: int, file_path: Path) -> None:
-        logger.info(f"Starting simulation of {n_samples} samples")
-        theta, x = self.simulate(n_samples)
-        logger.info("Simulation complete. Saving to Arrow file...")
-        self.save(file_path, theta, x)

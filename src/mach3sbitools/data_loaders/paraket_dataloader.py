@@ -12,6 +12,14 @@ class ParaketDataset(Dataset):
     Use .to_tensor_dataset() before training."""
 
     def __init__(self, data_folder: Path, parameter_names: list[str], nuisance_params: list[str] | None = None):
+        """
+        Constructor for ParaketDataset. This reads a folder of .feather files and constructors a
+        torch TensorDataset
+
+        :param data_folder: Folder containing .feather files
+        :param parameter_names:  Names of parameters to load
+        :param nuisance_params: Names of nuisance parameters to filter by
+        """
         self.data_folder = data_folder
         self.files = sorted(data_folder.glob("*.feather"))
         self.nuisance_params = nuisance_params or None
@@ -29,8 +37,9 @@ class ParaketDataset(Dataset):
         device: str = "cpu",
     ) -> TensorDataset:
         """
-        Load all feather files into RAM once and return a flat TensorDataset.
-        Optionally mask out nuisance parameters from theta.
+        Moves to a tensor dataset
+        :param device: Device to load to
+        :return:
         """
         all_theta, all_x = [], []
 

@@ -12,25 +12,16 @@ class FeatherOutput(TypedDict):
     x: SimulatorData
     theta: SimulatorData
 
-def to_feather(file_name: Path,
-               theta_values: SimulatorData,
-               x_values: SimulatorData,
-               )->None:
-
-    if file_name.suffix != ".feather":
-        raise ValueError("Must store outputs files with the *.feather extension")
-
-    param_dict: FeatherOutput = {
-        'x': x_values.tolist(),
-        'theta': theta_values.tolist()
-    }
-
-    param_table = Table.from_pydict(param_dict)
-
-    file_name.parent.mkdir(parents=True, exist_ok=True)
-    feather.write_feather(param_table, str(file_name))
 
 def filter_nuisance(parameter_names: list[str], nuisance_pars: list[str], theta: SimulatorData)->SimulatorData:
+    """
+    Filters out nuisance parameters + reduces the size of input parameter array
+
+    :param parameter_names: Names of parameters
+    :param nuisance_pars: Parameters to filter out (works with blah*)
+    :param theta: Theta values
+    :return:
+    """
     if len(theta[0])!=len(parameter_names):
         raise ValueError("Parameter names and theta must have same length")
 
@@ -49,6 +40,13 @@ def filter_nuisance(parameter_names: list[str], nuisance_pars: list[str], theta:
 
 def from_feather(file_name: Path, parameter_names: list[str],
                  nuisance_pars: list[str] | None=None)->SimulatorDataGrouped:
+    """
+    Gets parameters from a feather file
+    :param file_name: File to load
+    :param parameter_names: Parameter names
+    :param nuisance_pars: Parameters to filter out (works with blah*)
+    :return:
+    """
     if not file_name.exists():
         raise FileNotFoundError(file_name)
 
@@ -64,3 +62,28 @@ def from_feather(file_name: Path, parameter_names: list[str],
     # Now get parameter_names
 
     return theta, x
+
+def to_feather(file_name: Path,
+               theta_values: SimulatorData,
+               x_values: SimulatorData,
+               )->None:
+    """
+    Stores files in a feather format
+    :param file_name: File to store in
+    :param theta_values: Parameter values
+    :param x_values: Bin values
+    :return:
+    """
+
+    if file_name.suffix != ".feather":
+        raise ValueError("Must store outputs files with the *.feather extension")
+
+    param_dict: FeatherOutput = {
+        'x': x_values.tolist(),
+        'theta': theta_values.tolist()
+    }
+
+    param_table = Table.from_pydict(param_dict)
+
+    file_name.parent.mkdir(parents=True, exist_ok=True)
+    feather.write_feather(param_table, str(file_name))

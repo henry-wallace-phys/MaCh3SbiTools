@@ -4,59 +4,24 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+from contextlib import nullcontext
 from torch.amp import GradScaler, autocast
+from torch.optim.lr_scheduler import LinearLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from mach3sbitools.utils.config import TrainingConfig
 from mach3sbitools.utils.logger import create_progress, get_logger
-
 from .tensorboard_writer import TensorBoardWriter
 
-from contextlib import nullcontext
-
 logger = get_logger()
-
-
-# ──────────────────────────────
-# Helper functions (pure)
-# ──────────────────────────────
-
-
-def _log_epoch(
-    epoch, max_epochs, train_loss, val_loss, ema_val_loss, optimizer, elapsed
-):
-    logger.info(
-        f"Epoch {epoch:4d}/{max_epochs} | "
-        f"train: {train_loss:.4f} | val: {val_loss:.4f} | ema_val: {ema_val_loss:.4f} | "
-        f"lr: {optimizer.param_groups[0]['lr']:.2e} | {elapsed:.1f}s"
-    )
-
-
-def _update_best_state(
-    ema_val_loss: float,
-    best_val_loss: float,
-    epochs_no_improve: int,
-    best_state: dict | None,
-    model: nn.Module,
-) -> tuple[dict | None, float, int]:
-    improved = ema_val_loss < best_val_loss
-
-    if improved:
-        return (
-            {k: v.cpu().clone() for k, v in model.state_dict().items()},
-            ema_val_loss,
-            0,
-        )
-
-    return best_state, best_val_loss, epochs_no_improve + 1
 
 
 def save_checkpoint(
     epoch: int,
     density_estimator: nn.Module,
     optimizer: torch.optim.Optimizer,
-    warmup_scheduler: torch.optim.lr_scheduler.LRScheduler,
-    plateau_scheduler: torch.optim.lr_scheduler.LRScheduler,
+    warmup_scheduler: LinearLR,
+    plateau_scheduler: ReduceLROnPlateau,
     scaler: GradScaler,
     best_val_loss: float,
     epochs_no_improve: int,
@@ -64,11 +29,24 @@ def save_checkpoint(
     training_config: TrainingConfig | None = None,
     use_unique_path: bool = True,
 ) -> None:
+    """
+    Saves checkpoint to disk.
+    :param epoch:
+    :param density_estimator:
+    :param optimizer:
+    :param warmup_scheduler:
+    :param plateau_scheduler:
+    :param scaler:
+    :param best_val_loss:
+    :param epochs_no_improve:
+    :param save_path:
+    :param training_config:
+    :param use_unique_path:
+    :return:
+    """
     ckpt = {
         "epoch": epoch,
-        "model_state": {
-            k: v.cpu().clone() for k, v in density_estimator.state_dict().items()
-        },
+        "model_state": {k: v.cpu().clone() for k, v in density_estimator.state_dict().items()},
         "optimizer_state": optimizer.state_dict(),
         "warmup_scheduler_state": warmup_scheduler.state_dict(),
         "plateau_scheduler_state": plateau_scheduler.state_dict(),
@@ -88,36 +66,50 @@ def save_checkpoint(
     logger.debug(f"Autosaved checkpoint → [cyan]{ckpt_path}[/]")
 
 
-# ──────────────────────────────
-# Trainer
-# ──────────────────────────────
-
-
 class SBITrainer:
+    """Training loop for SBI density estimators."""
+
     def __init__(self, dataset: TensorDataset, config: TrainingConfig, device: str):
+        """
+        The SBI Trainer class.
+        :param dataset: The dataset to use
+        :param config: The training configuration
+        :param device: The device to use
+        """
         self.device = device
         self.device_type = device.split(":")[0]
         self.use_amp = False
+        self.config = config
 
-        self.writer = self._init_tensorboard(config)
-        self.train_loader, self.val_loader = self._build_dataloaders(dataset, config)
+        # Scheduler/optimiser state — populated in train()
+        self.optimizer: torch.optim.Optimizer | None = None
+        self.warmup: LinearLR | None = None
+        self.plateau: ReduceLROnPlateau | None = None
+        self.scaler: GradScaler | None = None
 
-    # ── Init helpers ─────────────────────────────────────────────
+        # Running training state
+        self.best_val_loss: float = float("inf")
+        self.best_state: dict[str, Any] | None = None
+        self.epochs_no_improve: int = 0
+        self.ema_val_loss: float | None = None
 
-    def _init_tensorboard(self, config: TrainingConfig) -> TensorBoardWriter | None:
-        if config.tensorboard_dir is None:
+        self.writer = self._init_tensorboard()
+        self.train_loader, self.val_loader = self._build_dataloaders(dataset)
+
+    # ── Init helpers ──────────────────────────────────────────────────────────
+
+    def _init_tensorboard(self) -> TensorBoardWriter | None:
+        if self.config.tensorboard_dir is None:
             return None
 
-        tb_dir = Path(config.tensorboard_dir)
+        tb_dir = Path(self.config.tensorboard_dir)
         tb_dir.mkdir(parents=True, exist_ok=True)
-
         logger.info(f"TensorBoard logging → [cyan]{tb_dir}[/]")
         logger.info(f"  Run: [bold]tensorboard --logdir {tb_dir}[/]")
-
         return TensorBoardWriter(str(tb_dir), self.device_type)
 
-    def _build_dataloaders(self, dataset: TensorDataset, config: TrainingConfig):
-        n_val = int(len(dataset) * config.validation_fraction)
+    def _build_dataloaders(self, dataset: TensorDataset) -> tuple[DataLoader, DataLoader]:
+        n_val = int(len(dataset) * self.config.validation_fraction)
         n_train = len(dataset) - n_val
 
         train_ds, val_ds = random_split(
@@ -127,9 +119,9 @@ class SBITrainer:
         )
 
         data_on_cpu = dataset.tensors[0].device.type == "cpu"
-        workers = config.num_workers if data_on_cpu else 0
+        workers = self.config.num_workers if data_on_cpu else 0
 
-        loader_kwargs: dict[str, Any]  = dict(
+        loader_kwargs: dict[str, Any] = dict(
             num_workers=workers,
             pin_memory=data_on_cpu,
             persistent_workers=data_on_cpu and workers > 0,
@@ -138,15 +130,14 @@ class SBITrainer:
 
         train_loader = DataLoader(
             train_ds,
-            batch_size=config.batch_size,
+            batch_size=self.config.batch_size,
             shuffle=True,
             drop_last=True,
             **loader_kwargs,
         )
-
         val_loader = DataLoader(
             val_ds,
-            batch_size=config.batch_size * 4,
+            batch_size=self.config.batch_size * 4,
             shuffle=False,
             **loader_kwargs,
         )
@@ -160,122 +151,88 @@ class SBITrainer:
 
         return train_loader, val_loader
 
-    # ── Public API ───────────────────────────────────────────────
+    # ── Public API ────────────────────────────────────────────────────────────
 
     def train(
         self,
         density_estimator: nn.Module,
-        config: TrainingConfig,
         optimizer: torch.optim.Optimizer | None = None,
         resume_checkpoint: Path | None = None,
     ) -> nn.Module:
+        """
+        Train the SBI algorithm
+        :param density_estimator: The density estimator to train
+        :param optimizer: The optimizer to use
+        :param resume_checkpoint: The checkpoint to resume training from
+        :return:
+        """
+        density_estimator = self._maybe_compile(density_estimator)
 
-        density_estimator = self._maybe_compile(density_estimator, config)
-        optimizer = optimizer or torch.optim.Adam(
-            density_estimator.parameters(), lr=config.learning_rate
+        self.optimizer = optimizer or torch.optim.Adam(
+            density_estimator.parameters(), lr=self.config.learning_rate
         )
+        self.warmup, self.plateau = self._build_schedulers()
+        self.scaler = GradScaler(device=self.device, enabled=self.use_amp)
 
-        schedulers = self._build_schedulers(optimizer, config)
-        scaler = GradScaler(device=self.device, enabled=self.use_amp)
-
-        start_epoch, best_val_loss, epochs_no_improve = self._resume_if_requested(
-            model=density_estimator,
-            optimizer=optimizer,
-            warmup=schedulers[0],
-            plateau=schedulers[1],
-            scaler=scaler,
-            resume_checkpoint=resume_checkpoint
-        )
+        start_epoch = self._resume_if_requested(density_estimator, resume_checkpoint)
 
         density_estimator.to(self.device)
-        best_state = self._clone_state(density_estimator)
+        self.best_state = self._clone_state(density_estimator)
+        self.ema_val_loss = None
 
-        ema_val_loss = None
         progress, epoch_task = create_progress(
-            show_epoch=config.show_epoch_progress,
-            total_epochs=config.max_epochs - (start_epoch - 1),
-            description=f"Training (epoch {start_epoch}→{config.max_epochs})",
+            show_epoch=self.config.show_epoch_progress,
+            total_epochs=self.config.max_epochs - (start_epoch - 1),
+            description=f"Training (epoch {start_epoch}→{self.config.max_epochs})",
         )
 
         with progress:
-            for epoch in range(start_epoch, config.max_epochs + 1):
+            for epoch in range(start_epoch, self.config.max_epochs + 1):
                 t0 = time.perf_counter()
 
-                train_loss = self._train_one_epoch(
-                    density_estimator, optimizer, scaler, config, epoch
-                )
+                train_loss = self._train_one_epoch(density_estimator)
                 val_loss = self._validate(density_estimator)
-
                 elapsed = time.perf_counter() - t0
-                ema_val_loss = (
+
+                self.ema_val_loss = (
                     val_loss
-                    if ema_val_loss is None
-                    else config.ema_alpha * val_loss
-                    + (1 - config.ema_alpha) * ema_val_loss
+                    if self.ema_val_loss is None
+                    else self.config.ema_alpha * val_loss + (1 - self.config.ema_alpha) * self.ema_val_loss
                 )
 
-                self._step_schedulers(epoch, ema_val_loss, config, *schedulers)
+                self._step_schedulers(epoch)
 
-                if epoch % config.print_interval == 0:
-                    _log_epoch(
-                        epoch,
-                        config.max_epochs,
-                        train_loss,
-                        val_loss,
-                        ema_val_loss,
-                        optimizer,
-                        elapsed,
-                    )
+                if epoch % self.config.print_interval == 0:
+                    self._log_epoch(epoch, train_loss, val_loss, elapsed)
 
-                self._log_tensorboard(
-                    epoch,
-                    train_loss,
-                    val_loss,
-                    ema_val_loss,
-                    best_val_loss,
-                    optimizer,
-                    elapsed,
-                    epochs_no_improve,
-                )
+                self._log_tensorboard(epoch, train_loss, val_loss, elapsed)
+                self._update_best_state(density_estimator)
+                self._maybe_save(epoch, density_estimator)
 
-                best_state, best_val_loss, epochs_no_improve = _update_best_state(
-                    ema_val_loss,
-                    best_val_loss,
-                    epochs_no_improve,
-                    best_state,
-                    density_estimator,
-                )
-
-                self._maybe_save(
-                    epoch,
-                    density_estimator,
-                    optimizer,
-                    schedulers,
-                    scaler,
-                    best_val_loss,
-                    epochs_no_improve,
-                    config,
-                )
-
-                if epochs_no_improve >= config.stop_after_epochs:
+                if self.epochs_no_improve >= self.config.stop_after_epochs:
                     logger.warning(f"Early stopping at epoch {epoch}")
                     break
 
                 if epoch_task and not isinstance(progress, nullcontext):
                     progress.update(task_id=epoch_task, advance=1)
 
-        if best_state:
-            density_estimator.load_state_dict(best_state)
+        if self.best_state:
+            density_estimator.load_state_dict(self.best_state)
 
         if self.writer:
             self.writer.close()
 
-        logger.info(f"Training complete. Best val loss: {best_val_loss:.4f}")
+        logger.info(f"Training complete. Best val loss: {self.best_val_loss:.4f}")
         return density_estimator
 
-    # ── Training internals ───────────────────────────────────────
+    # ── Training internals ────────────────────────────────────────────────────
 
-    def _train_one_epoch(self, model, optimizer, scaler, config, epoch):
+    def _train_one_epoch(self, model: nn.Module) -> float:
+        """
+        Train one epoch
+        :param model:
+        :return:
+        """
         model.train()
         total_loss = 0.0
 
@@ -283,24 +240,27 @@ class SBITrainer:
             theta = theta.to(self.device, non_blocking=True)
             x = x.to(self.device, non_blocking=True)
 
-            optimizer.zero_grad(set_to_none=True)
+            self.optimizer.zero_grad(set_to_none=True)
 
-            with autocast(
-                device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp
-            ):
+            with autocast(device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp):
                 loss = model.loss(theta, x).mean()
 
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
+            self.scaler.scale(loss).backward()
+            self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-            scaler.step(optimizer)
-            scaler.update()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
             total_loss += loss.detach().item()
 
         return total_loss / len(self.train_loader)
 
-    def _validate(self, model):
+    def _validate(self, model: nn.Module) -> float:
+        """
+        Validate one epoch
+        :param model:
+        :return:
+        """
         model.eval()
         total_loss = 0.0
 
@@ -309,22 +269,123 @@ class SBITrainer:
                 theta = theta.to(self.device, non_blocking=True)
                 x = x.to(self.device, non_blocking=True)
 
-                with autocast(
-                    device_type=self.device_type,
-                    dtype=torch.bfloat16,
-                    enabled=self.use_amp,
-                ):
+                with autocast(device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp):
                     total_loss += model.loss(theta, x).mean().item()
 
         return total_loss / len(self.val_loader)
 
-    # ── Utility helpers ─────────────────────────────────────────
+    # ── State management ──────────────────────────────────────────────────────
 
-    def _clone_state(self, model):
+    def _update_best_state(self, model: nn.Module) -> None:
+        if self.ema_val_loss < self.best_val_loss:
+            self.best_val_loss = self.ema_val_loss
+            self.best_state = self._clone_state(model)
+            self.epochs_no_improve = 0
+        else:
+            self.epochs_no_improve += 1
+
+    def _resume_if_requested(self, model: nn.Module, resume_checkpoint: Path | None) -> int:
+        """Load checkpoint state into all components; return start epoch."""
+        if not resume_checkpoint:
+            return 1
+
+        ckpt = torch.load(resume_checkpoint, map_location="cpu")
+        model.load_state_dict(ckpt["model_state"])
+        self.optimizer.load_state_dict(ckpt["optimizer_state"])
+        self.warmup.load_state_dict(ckpt["warmup_scheduler_state"])
+        self.plateau.load_state_dict(ckpt["plateau_scheduler_state"])
+        self.scaler.load_state_dict(ckpt["scaler_state"])
+        self.best_val_loss = ckpt["best_val_loss"]
+        self.epochs_no_improve = ckpt["epochs_no_improve"]
+
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+
+        start_epoch = ckpt["epoch"] + 1
+        logger.info(f"Resumed from {resume_checkpoint} | epoch {start_epoch}")
+        return start_epoch
+
+    # ── Scheduler helpers ─────────────────────────────────────────────────────
+
+    def _build_schedulers(self) -> tuple[LinearLR, ReduceLROnPlateau]:
+        warmup = LinearLR(
+            self.optimizer,
+            start_factor=0.01,
+            end_factor=1.0,
+            total_iters=self.config.warmup_epochs,
+        )
+        plateau = ReduceLROnPlateau(
+            self.optimizer,
+            patience=self.config.scheduler_patience,
+            factor=0.5,
+            min_lr=1e-8,
+            threshold=1e-3,
+            threshold_mode="abs",
+        )
+        return warmup, plateau
+
+    def _step_schedulers(self, epoch: int) -> None:
+        if epoch <= self.config.warmup_epochs:
+            self.warmup.step()
+        else:
+            self.plateau.step(self.ema_val_loss)
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+
+    def _log_epoch(self, epoch: int, train_loss: float, val_loss: float, elapsed: float) -> None:
+        logger.info(
+            f"Epoch {epoch:4d}/{self.config.max_epochs} | "
+            f"train: {train_loss:.4f} | val: {val_loss:.4f} | ema_val: {self.ema_val_loss:.4f} | "
+            f"lr: {self.optimizer.param_groups[0]['lr']:.2e} | {elapsed:.1f}s"
+        )
+
+    def _log_tensorboard(
+        self, epoch: int, train_loss: float, val_loss: float, elapsed: float
+    ) -> None:
+        if not self.writer:
+            return
+        self.writer.add_to_writer(
+            epoch,
+            train_loss,
+            val_loss,
+            self.ema_val_loss,
+            self.best_val_loss,
+            self.optimizer,
+            elapsed,
+            self.epochs_no_improve,
+            len(self.train_loader),
+        )
+
+    # ── Checkpoint saving ─────────────────────────────────────────────────────
+
+    def _maybe_save(self, epoch: int, model: nn.Module) -> None:
+        if not self.config.save_path:
+            return
+
+        if self.epochs_no_improve == 0:
+            save_checkpoint(
+                epoch, model, self.optimizer, self.warmup, self.plateau, self.scaler,
+                self.best_val_loss, self.epochs_no_improve,
+                self.config.save_path, training_config=self.config, use_unique_path=False,
+            )
+
+        if epoch % self.config.autosave_every == 0:
+            save_checkpoint(
+                epoch, model, self.optimizer, self.warmup, self.plateau, self.scaler,
+                self.best_val_loss, self.epochs_no_improve,
+                self.config.save_path, training_config=self.config,
+            )
+
+    # ── Static utilities ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _clone_state(model: nn.Module) -> dict[str, Any]:
         return {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
-    def _maybe_compile(self, model, config):
-        if not config.compile:
+    def _maybe_compile(self, model: nn.Module) -> nn.Module:
+        if not self.config.compile:
             return model
         try:
             logger.info("torch.compile() enabled")
@@ -332,130 +393,3 @@ class SBITrainer:
         except Exception as e:
             logger.warning(f"torch.compile() unavailable: {e}")
             return model
-
-    def _build_schedulers(self, optimizer, config):
-        warmup = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=0.01,
-            end_factor=1.0,
-            total_iters=config.warmup_epochs,
-        )
-
-        plateau = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            patience=config.scheduler_patience,
-            factor=0.5,
-            min_lr=1e-8,
-            threshold=1e-3,
-            threshold_mode="abs",
-        )
-
-        return warmup, plateau
-
-    def _step_schedulers(self, epoch, ema_val_loss, config, warmup, plateau):
-        if epoch <= config.warmup_epochs:
-            warmup.step()
-        else:
-            plateau.step(ema_val_loss)
-
-    def _log_tensorboard(
-        self,
-        epoch,
-        train_loss,
-        val_loss,
-        ema_val_loss,
-        best_val_loss,
-        optimizer,
-        elapsed,
-        epochs_no_improve,
-    ):
-        if not self.writer:
-            return
-
-        self.writer.add_to_writer(
-            epoch,
-            train_loss,
-            val_loss,
-            ema_val_loss,
-            best_val_loss,
-            optimizer,
-            elapsed,
-            epochs_no_improve,
-            len(self.train_loader)
-        )
-
-    def _maybe_save(
-        self,
-        epoch,
-        model,
-        optimizer,
-        schedulers,
-        scaler,
-        best_val_loss,
-        epochs_no_improve,
-        config,
-    ):
-        if not config.save_path:
-            return
-
-        warmup, plateau = schedulers
-
-        if epochs_no_improve == 0:
-            save_checkpoint(
-                epoch,
-                model,
-                optimizer,
-                warmup,
-                plateau,
-                scaler,
-                best_val_loss,
-                epochs_no_improve,
-                config.save_path,
-                training_config=config,
-                use_unique_path=False,
-            )
-
-        if epoch % config.autosave_every == 0:
-            save_checkpoint(
-                epoch,
-                model,
-                optimizer,
-                warmup,
-                plateau,
-                scaler,
-                best_val_loss,
-                epochs_no_improve,
-                config.save_path,
-                training_config=config,
-            )
-
-    def _resume_if_requested(
-        self,
-        model,
-        optimizer,
-        warmup,
-        plateau,
-        scaler,
-        resume_checkpoint,
-    ):
-        if not resume_checkpoint:
-            return 1, float("inf"), 0
-
-        ckpt = torch.load(resume_checkpoint, map_location="cpu")
-
-        model.load_state_dict(ckpt["model_state"])
-        optimizer.load_state_dict(ckpt["optimizer_state"])
-        warmup.load_state_dict(ckpt["warmup_scheduler_state"])
-        plateau.load_state_dict(ckpt["plateau_scheduler_state"])
-        scaler.load_state_dict(ckpt["scaler_state"])
-
-        for state in optimizer.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.to(self.device)
-
-        start_epoch = ckpt["epoch"] + 1
-
-        logger.info(f"Resumed from {resume_checkpoint} | epoch {start_epoch}")
-
-        return start_epoch, ckpt["best_val_loss"], ckpt["epochs_no_improve"]
