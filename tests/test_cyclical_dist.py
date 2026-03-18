@@ -1,9 +1,10 @@
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from scipy.stats import kstest
 
 from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistribution
+
 
 @pytest.fixture(scope="session")
 def cyclical_distribution()->CyclicalDistribution:

@@ -4,10 +4,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mach3sbitools.types import SimulatorData
-from mach3sbitools.utils import MaCh3Logger, to_feather, PosteriorConfig, TrainingConfig
-from mach3sbitools.simulator.simulator_injector import get_simulator
 from mach3sbitools.simulator import create_prior
+from mach3sbitools.simulator.simulator_injector import get_simulator
+from mach3sbitools.types import SimulatorData
+from mach3sbitools.utils import MaCh3Logger, PosteriorConfig, TrainingConfig, to_feather
 
 MaCh3Logger(
     level="INFO"

@@ -1,10 +1,10 @@
+import numpy as np
 import pytest
 import torch
-import numpy as np
+from dummy_simulator import DummySimulator
 from scipy import stats
 
 from mach3sbitools.inference import InferenceHandler
-from dummy_simulator import DummySimulator
 
 N_SAMPLES = 10000
 
@@ -154,7 +154,6 @@ def test_posterior_reproducible_with_same_seed(trained_handler, nominal_observat
     assert torch.allclose(samples_a, samples_b), (
         "Posterior sampling is not reproducible with the same seed"
     )
-
 
 # ── Checkpoint / save-load ─────────────────────────────────────────────────────
 

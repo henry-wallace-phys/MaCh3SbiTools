@@ -2,7 +2,6 @@ from collections.abc import Sequence
 
 import numpy as np
 
-
 from mach3sbitools.types import BoundaryConditions
 
 THETA_DIM = 30

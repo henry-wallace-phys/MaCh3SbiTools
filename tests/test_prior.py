@@ -1,10 +1,8 @@
 from unittest.mock import call, patch
 
 import numpy as np
-import pytest
 import torch
 
-from mach3sbitools.simulator import create_prior
 from mach3sbitools.simulator.priors.dataclasses import PriorData
 from mach3sbitools.simulator.priors.prior import _check_boundary
 from mach3sbitools.utils import get_logger
