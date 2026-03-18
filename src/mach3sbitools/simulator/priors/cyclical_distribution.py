@@ -1,6 +1,7 @@
+import numpy as np
 import torch
 import torch.distributions
-import numpy as np
+
 
 class CyclicalDistribution(torch.distributions.Distribution):
     def __init__(self, nominals: torch.Tensor, lower_bounds: torch.Tensor, upper_bounds: torch.Tensor):
