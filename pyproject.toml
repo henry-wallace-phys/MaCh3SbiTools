@@ -16,6 +16,7 @@ dependencies = [
     "pyarrow",
     "scipy-stubs~=1.17.1",
     "arviz",
+    "rich"
 ]
 
 [project.optional-dependencies]
