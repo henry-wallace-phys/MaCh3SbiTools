@@ -16,13 +16,15 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
     "sphinx_click",
-]  # Suppress warnings from third-party packages
+]
+# Suppress warnings from third-party packages
 suppress_warnings = [
-    "ref.ref",  # undefined labels in torch/rich docstrings
-    "ref.doc",
-    "docutils",
+    # "ref.ref",  # undefined labels in torch/rich docstrings
+    # "ref.doc",
+    # "docutils",
 ]
 
+sphinx_click_mock_imports = ["mach3sbitools", "pyarrow", "pandas"]
 
 html_theme = "furo"
 

@@ -28,6 +28,13 @@ dev = [
     "sphinx"
 ]
 
+docs = [
+    "sphinx",
+    "sphinx-click==4.4.0", # OLD VERSION NEEDED
+    "sphinx-autodoc-typehints>=2.3.0",
+    "furo"
+]
+
 
 [project.scripts]
 mach3sbi = "mach3sbitools.apps.main_cli:cli"

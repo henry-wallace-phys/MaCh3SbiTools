@@ -491,7 +491,3 @@ def inference(
 
     data_table = pd.DataFrame({p: samples[:, i] for i, p in enumerate(parameter_names)})
     pq.write_table(data_table, save_dir)
-
-
-if __name__ == "__main__":
-    cli()
