@@ -1,17 +1,15 @@
 import time
 from pathlib import Path
-from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset, random_split
 from torch.amp import GradScaler, autocast
-from contextlib import nullcontext
-from rich.progress import Progress
+from torch.utils.data import DataLoader, TensorDataset, random_split
+
+from mach3sbitools.utils.config import TrainingConfig
+from mach3sbitools.utils.logger import create_progress, get_logger
 
 from .tensorboard_writer import TensorBoardWriter
-from mach3sbitools.utils.config import TrainingConfig
-from mach3sbitools.utils.logger import get_logger, create_progress
 
 logger = get_logger(__name__)
 
@@ -20,7 +18,10 @@ logger = get_logger(__name__)
 # Helper functions (pure)
 # ──────────────────────────────
 
-def _log_epoch(epoch, max_epochs, train_loss, val_loss, ema_val_loss, optimizer, elapsed):
+
+def _log_epoch(
+    epoch, max_epochs, train_loss, val_loss, ema_val_loss, optimizer, elapsed
+):
     logger.info(
         f"Epoch {epoch:4d}/{max_epochs} | "
         f"train: {train_loss:.4f} | val: {val_loss:.4f} | ema_val: {ema_val_loss:.4f} | "
@@ -32,9 +33,9 @@ def _update_best_state(
     ema_val_loss: float,
     best_val_loss: float,
     epochs_no_improve: int,
-    best_state: Optional[dict],
+    best_state: dict | None,
     model: nn.Module,
-) -> Tuple[Optional[dict], float, int]:
+) -> tuple[dict | None, float, int]:
     improved = ema_val_loss < best_val_loss
 
     if improved:
@@ -62,7 +63,9 @@ def save_checkpoint(
 ) -> None:
     ckpt = {
         "epoch": epoch,
-        "model_state": {k: v.cpu().clone() for k, v in density_estimator.state_dict().items()},
+        "model_state": {
+            k: v.cpu().clone() for k, v in density_estimator.state_dict().items()
+        },
         "optimizer_state": optimizer.state_dict(),
         "warmup_scheduler_state": warmup_scheduler.state_dict(),
         "plateau_scheduler_state": plateau_scheduler.state_dict(),
@@ -98,7 +101,7 @@ class SBITrainer:
 
     # ── Init helpers ─────────────────────────────────────────────
 
-    def _init_tensorboard(self, config: TrainingConfig) -> Optional[TensorBoardWriter]:
+    def _init_tensorboard(self, config: TrainingConfig) -> TensorBoardWriter | None:
         if config.tensorboard_dir is None:
             return None
 
@@ -160,8 +163,8 @@ class SBITrainer:
         self,
         density_estimator: nn.Module,
         config: TrainingConfig,
-        optimizer: Optional[torch.optim.Optimizer] = None,
-        resume_checkpoint: Optional[Path] = None,
+        optimizer: torch.optim.Optimizer | None = None,
+        resume_checkpoint: Path | None = None,
     ) -> nn.Module:
 
         density_estimator = self._maybe_compile(density_estimator, config)
@@ -199,31 +202,51 @@ class SBITrainer:
                 ema_val_loss = (
                     val_loss
                     if ema_val_loss is None
-                    else config.ema_alpha * val_loss + (1 - config.ema_alpha) * ema_val_loss
+                    else config.ema_alpha * val_loss
+                    + (1 - config.ema_alpha) * ema_val_loss
                 )
 
                 self._step_schedulers(epoch, ema_val_loss, config, *schedulers)
 
                 if epoch % config.print_interval == 0:
-                    _log_epoch(epoch, config.max_epochs, train_loss,
-                               val_loss, ema_val_loss, optimizer, elapsed)
+                    _log_epoch(
+                        epoch,
+                        config.max_epochs,
+                        train_loss,
+                        val_loss,
+                        ema_val_loss,
+                        optimizer,
+                        elapsed,
+                    )
 
-                self._log_tensorboard(epoch,
-                                      train_loss,
-                                      val_loss,
-                                      ema_val_loss,
-                                      best_val_loss,
-                                      optimizer,
-                                      elapsed,
-                                      epochs_no_improve)
+                self._log_tensorboard(
+                    epoch,
+                    train_loss,
+                    val_loss,
+                    ema_val_loss,
+                    best_val_loss,
+                    optimizer,
+                    elapsed,
+                    epochs_no_improve,
+                )
 
                 best_state, best_val_loss, epochs_no_improve = _update_best_state(
-                    ema_val_loss, best_val_loss, epochs_no_improve, best_state, density_estimator
+                    ema_val_loss,
+                    best_val_loss,
+                    epochs_no_improve,
+                    best_state,
+                    density_estimator,
                 )
 
                 self._maybe_save(
-                    epoch, density_estimator, optimizer, schedulers, scaler,
-                    best_val_loss, epochs_no_improve, config
+                    epoch,
+                    density_estimator,
+                    optimizer,
+                    schedulers,
+                    scaler,
+                    best_val_loss,
+                    epochs_no_improve,
+                    config,
                 )
 
                 if epochs_no_improve >= config.stop_after_epochs:
@@ -254,7 +277,9 @@ class SBITrainer:
 
             optimizer.zero_grad(set_to_none=True)
 
-            with autocast(device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp):
+            with autocast(
+                device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp
+            ):
                 loss = model.loss(theta, x).mean()
 
             scaler.scale(loss).backward()
@@ -276,7 +301,11 @@ class SBITrainer:
                 theta = theta.to(self.device, non_blocking=True)
                 x = x.to(self.device, non_blocking=True)
 
-                with autocast(device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp):
+                with autocast(
+                    device_type=self.device_type,
+                    dtype=torch.bfloat16,
+                    enabled=self.use_amp,
+                ):
                     total_loss += model.loss(theta, x).mean().item()
 
         return total_loss / len(self.val_loader)
@@ -321,16 +350,42 @@ class SBITrainer:
         else:
             plateau.step(ema_val_loss)
 
-    def _log_tensorboard(self, epoch, train_loss, val_loss, ema_val_loss, best_val_loss, optimizer, elapsed, epochs_no_improve):
+    def _log_tensorboard(
+        self,
+        epoch,
+        train_loss,
+        val_loss,
+        ema_val_loss,
+        best_val_loss,
+        optimizer,
+        elapsed,
+        epochs_no_improve,
+    ):
         if not self.writer:
             return
 
         self.writer.add_to_writer(
-            epoch, train_loss, val_loss, ema_val_loss,
-            best_val_loss, optimizer, elapsed, epochs_no_improve
+            epoch,
+            train_loss,
+            val_loss,
+            ema_val_loss,
+            best_val_loss,
+            optimizer,
+            elapsed,
+            epochs_no_improve,
         )
 
-    def _maybe_save(self, epoch, model, optimizer, schedulers, scaler, best_val_loss, epochs_no_improve, config):
+    def _maybe_save(
+        self,
+        epoch,
+        model,
+        optimizer,
+        schedulers,
+        scaler,
+        best_val_loss,
+        epochs_no_improve,
+        config,
+    ):
         if not config.save_path:
             return
 
@@ -338,16 +393,31 @@ class SBITrainer:
 
         if epochs_no_improve == 0:
             save_checkpoint(
-                epoch, model, optimizer, warmup, plateau, scaler,
-                best_val_loss, epochs_no_improve, config.save_path,
-                training_config=config, use_unique_path=False
+                epoch,
+                model,
+                optimizer,
+                warmup,
+                plateau,
+                scaler,
+                best_val_loss,
+                epochs_no_improve,
+                config.save_path,
+                training_config=config,
+                use_unique_path=False,
             )
 
         if epoch % config.autosave_every == 0:
             save_checkpoint(
-                epoch, model, optimizer, warmup, plateau, scaler,
-                best_val_loss, epochs_no_improve, config.save_path,
-                training_config=config
+                epoch,
+                model,
+                optimizer,
+                warmup,
+                plateau,
+                scaler,
+                best_val_loss,
+                epochs_no_improve,
+                config.save_path,
+                training_config=config,
             )
 
     def _resume_if_requested(

@@ -12,22 +12,25 @@ Checks are done in the following order
 """
 
 import fnmatch
-from pathlib import Path
-from typing import List, TypeAlias, TypedDict
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TypeAlias
 
 import numpy as np
 import torch
 from torch.distributions import MultivariateNormal, Uniform, constraints
 
-from .dataclasses import PriorData
-from .cyclical_distribution import CyclicalDistribution
-from ..simulator_injector import SimulatorProtocol
 from mach3sbitools.utils import TorchDeviceHandler
+
+from ..simulator_injector import SimulatorProtocol
+from .cyclical_distribution import CyclicalDistribution
+from .dataclasses import PriorData
 
 size_: TypeAlias = torch.Size | list[int] | tuple[int, ...]
 
-class PriorNotFound(Exception):...
+
+class PriorNotFound(Exception): ...
+
 
 @dataclass(frozen=True)
 class MaskDistributionMap:
@@ -36,21 +39,26 @@ class MaskDistributionMap:
     distribution: torch.distributions.Distribution
 
     def to(self, device: torch.device) -> "MaskDistributionMap":
-        return MaskDistributionMap(mask=self.mask.to(device), distribution=self.distribution)
+        return MaskDistributionMap(
+            mask=self.mask.to(device), distribution=self.distribution
+        )
+
 
 class Prior(torch.distributions.Distribution):
     """
     The MaCh3SBITools prior. Designed to ~replicate prior construction in MaCh3 (https://github.com/mach3-software/MaCh3)
     Essentially a wrapper around cyclical, uniform and multivariate distributions.
     """
+
     nuisance_filter: torch.Tensor
 
-    def __init__(self,
-                 prior_data: PriorData,
-                 flat_msk: list[bool] | None = None,
-                 cyclical_parameters: List[float] | None = None,
-                 nuisance_parameters: list[str] | None = None,
-                 ):
+    def __init__(
+        self,
+        prior_data: PriorData,
+        flat_msk: list[bool] | None = None,
+        cyclical_parameters: list[float] | None = None,
+        nuisance_parameters: list[str] | None = None,
+    ):
         """
         Prior constructor
         :param prior_data: The dataclass containing information about the prior
@@ -71,10 +79,11 @@ class Prior(torch.distributions.Distribution):
 
         cyclical_mask = torch.zeros(len(self.prior_data.nominals), dtype=torch.bool)
         if cyclical_parameters:
-            cyclical_mask_ = [any(fnmatch.fnmatch(p, c) for c in cyclical_parameters)
-                              for p in self.prior_data.parameter_names]
+            cyclical_mask_ = [
+                any(fnmatch.fnmatch(p, c) for c in cyclical_parameters)
+                for p in self.prior_data.parameter_names
+            ]
             cyclical_mask = self.device_handler.to_tensor(cyclical_mask_)
-
 
         if any(cyclical_mask):
             # Add cyclical params
@@ -99,16 +108,17 @@ class Prior(torch.distributions.Distribution):
             validate_args=False,
         )
 
-
     # Parameter Setters
     def _get_cyclical_map(self, cyclical_mask):
         self.prior_data.lower_bounds[cyclical_mask] = -2 * torch.pi
         self.prior_data.upper_bounds[cyclical_mask] = 2 * torch.pi
 
         cyclical_data = self.prior_data[cyclical_mask]
-        cyclical_dist = CyclicalDistribution(cyclical_data.nominals,
-                                             cyclical_data.lower_bounds,
-                                             cyclical_data.upper_bounds)
+        cyclical_dist = CyclicalDistribution(
+            cyclical_data.nominals,
+            cyclical_data.lower_bounds,
+            cyclical_data.upper_bounds,
+        )
         return MaskDistributionMap(cyclical_mask, cyclical_dist)
 
     def _get_flat_map(self, flat_mask):
@@ -118,8 +128,9 @@ class Prior(torch.distributions.Distribution):
 
     def _get_gaussian_map(self, gaussian_mask):
         gaussian_data = self.prior_data[gaussian_mask]
-        gaussian_dist = MultivariateNormal(gaussian_data.nominals,
-                                           covariance_matrix=gaussian_data.covariance_matrix)
+        gaussian_dist = MultivariateNormal(
+            gaussian_data.nominals, covariance_matrix=gaussian_data.covariance_matrix
+        )
         return MaskDistributionMap(gaussian_mask, gaussian_dist)
 
     @property
@@ -133,21 +144,23 @@ class Prior(torch.distributions.Distribution):
             self.nuisance_filter = torch.ones(n_pars, dtype=torch.bool)
             return
 
-        nuisance_filter_ = [any(fnmatch.fnmatch(p, n) for p in self._prior_data.parameter_names)
-                            for n in nuisance_patterns]
+        nuisance_filter_ = [
+            any(fnmatch.fnmatch(p, n) for p in self._prior_data.parameter_names)
+            for n in nuisance_patterns
+        ]
         self.nuisance_filter = self.device_handler.to_tensor(nuisance_filter_)
 
     @property
-    def mean(self)-> torch.Tensor:
+    def mean(self) -> torch.Tensor:
         # Get the mean
         return self.prior_data.nominals
 
     @property
-    def n_params(self)->int:
+    def n_params(self) -> int:
         return len(self.prior_data.nominals)
 
     @property
-    def variance(self)->torch.Tensor:
+    def variance(self) -> torch.Tensor:
         # Get the variance
         variance = torch.zeros(len(self.prior_data.nominals))
         for mask_map in self._priors:
@@ -157,7 +170,10 @@ class Prior(torch.distributions.Distribution):
     @property
     def support(self):
         return constraints.independent(
-            constraints.interval(self.prior_data.lower_bounds, self.prior_data.upper_bounds), 1
+            constraints.interval(
+                self.prior_data.lower_bounds, self.prior_data.upper_bounds
+            ),
+            1,
         )
 
     def sample(self, sample_shape=torch.Size([])):
@@ -173,24 +189,27 @@ class Prior(torch.distributions.Distribution):
         return samples
 
     def check_bounds(self, params: torch.Tensor) -> torch.Tensor:
-        in_bounds = (params >= self.prior_data.lower_bounds) & (params <= self.prior_data.upper_bounds)
+        in_bounds = (params >= self.prior_data.lower_bounds) & (
+            params <= self.prior_data.upper_bounds
+        )
         return in_bounds.all(dim=-1)
 
     def save(self, output_path: Path) -> None:
         torch.save(self, output_path)
 
     # Does to in place
-    def to(self, device: torch.device) -> 'Prior':
+    def to(self, device: torch.device) -> "Prior":
         self._prior_data = self._prior_data.to(device)
         for i, mask_map in enumerate(self._priors):
             self._priors[i] = mask_map.to(device)
         self.nuisance_filter = self.nuisance_filter.to(device)
         return self
 
+
 def create_prior(
     simulator_instance: SimulatorProtocol,
-    nuisance_pars: List[str] | None = None,
-    cyclical_pars: List[str] | None = None,
+    nuisance_pars: list[str] | None = None,
+    cyclical_pars: list[str] | None = None,
 ) -> Prior:
     """
     Convenience function to create a prior from a MaCh3DUNEWrapper instance.
@@ -205,19 +224,19 @@ def create_prior(
     Returns:
         MaCh3Prior object compatible with SBI
     """
-    nominals, errors = simulator_instance.get_nominal_error()
-    bounds           = simulator_instance.get_bounds()
-    names            = simulator_instance.get_parameter_names()
-    flat_pars        = [simulator_instance.get_is_flat(i) for i in range(len(names))]
-    covariance       = simulator_instance.get_covariance_matrix()
+    nominals, _errors = simulator_instance.get_nominal_error()
+    bounds = simulator_instance.get_bounds()
+    names = simulator_instance.get_parameter_names()
+    flat_pars = [simulator_instance.get_is_flat(i) for i in range(len(names))]
+    covariance = simulator_instance.get_covariance_matrix()
 
     dh = TorchDeviceHandler()
     data = PriorData(
-        parameter_names   = np.array(names, dtype=str),
-        nominals          = dh.to_tensor(nominals),
-        lower_bounds      = dh.to_tensor(bounds[0]),
-        upper_bounds      = dh.to_tensor(bounds[1]),
-        covariance_matrix = dh.to_tensor(covariance),
+        parameter_names=np.array(names, dtype=str),
+        nominals=dh.to_tensor(nominals),
+        lower_bounds=dh.to_tensor(bounds[0]),
+        upper_bounds=dh.to_tensor(bounds[1]),
+        covariance_matrix=dh.to_tensor(covariance),
     )
 
     return Prior(
@@ -227,7 +246,8 @@ def create_prior(
         cyclical_parameters=cyclical_pars,
     )
 
-def load_prior(prior_path: Path, device=torch.device('cpu')) -> Prior:
+
+def load_prior(prior_path: Path, device=torch.device("cpu")) -> Prior:
     """
     Load the prior from the given path
     """

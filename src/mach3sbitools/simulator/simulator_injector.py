@@ -1,10 +1,11 @@
 import importlib
 import inspect
 import pkgutil
+from collections.abc import Sequence
 from difflib import get_close_matches
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Protocol, Sequence, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
@@ -13,23 +14,27 @@ from mach3sbitools.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-'''
+"""
 A simulator injector. Simulators are expected to follow the SimulatorProtocol contract. Additionally they require
 setup by some input file. This should set up the simulator in full. For MaCh3 this is the fitter YAML config.
-'''
+"""
 
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
 
+
 class SimulatorException(Exception):
     pass
+
 
 class SimulatorImportError(SimulatorException):
     pass
 
+
 class SimulatorImplementationError(SimulatorException):
     pass
+
 
 class SimulatorSetupError(SimulatorException):
     pass
@@ -40,38 +45,48 @@ class SimulatorSetupError(SimulatorException):
 # ---------------------------------------------------------------------------
 @runtime_checkable
 class SimulatorProtocol(Protocol):
-    '''
+    """
     Any simulator requires
     1. To be set up via configuration file
     2. Have AT LEAST these methods
-    '''
+    """
+
     def __init__(self, simulator_config: Path | str) -> None: ...
+
     # Get the simulation for a single input
     def simulate(self, theta: Sequence[float]) -> Sequence[float]: ...
+
     # Get the names for each theta
     def get_parameter_names(self) -> Sequence[str]: ...
+
     # Get the bounds as a [lower, upper]
     def get_bounds(self) -> BoundaryConditions: ...
+
     # Check if a given parameter is flat
     def get_is_flat(self, i: int) -> bool: ...
+
     # Get the data bins (xo)
     def get_data_bins(self) -> Sequence[float]: ...
+
     # Get the nominal (mean) values
     def get_nominal_error(self) -> NominalError: ...
+
     # Get the correlation matrix
     def get_covariance_matrix(self) -> np.ndarray: ...
+
 
 # Thanks stack overflow
 # https://stackoverflow.com/questions/62922935/python-check-if-class-implements-unrelated-interface
 def _implements(proto: SimulatorProtocol):
-    """ Creates a decorator for classes that checks that the decorated class implements the runtime protocol `proto`
-    """
+    """Creates a decorator for classes that checks that the decorated class implements the runtime protocol `proto`"""
+
     def _deco(cls_def):
         if issubclass(cls_def, proto):
             return cls_def
         raise SimulatorImplementationError(
             f"{cls_def} does not implement protocol {proto}. Please see {__file__} for the implmentation."
         )
+
     return _deco
 
 
@@ -79,19 +94,23 @@ def _implements(proto: SimulatorProtocol):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _closest_match(name: str, candidates: list[str]) -> str | None:
     # Get the closest match for 'name' and a list of candidate names
     matches = get_close_matches(name, candidates, n=1, cutoff=0.6)
     return matches[0] if matches else None
+
 
 def _hint(name: str, candidates: list[str]) -> str:
     # Generate hint text or errors
     match = _closest_match(name, candidates)
     return f" Did you mean: {match}?" if match else ""
 
+
 # ---------------------------------------------------------------------------
 # Loader
 # ---------------------------------------------------------------------------
+
 
 def get_simulator(module_name: str, class_name: str, config: Path) -> SimulatorProtocol:
     """Dynamically loads a simulator class, validating it follows SimulatorProtocol."""

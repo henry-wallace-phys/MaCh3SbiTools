@@ -1,29 +1,25 @@
 import logging
-from pathlib import Path
-from typing import Optional
 from contextlib import nullcontext
+from pathlib import Path
+from typing import ClassVar
 
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 from rich.theme import Theme
-from rich.progress import (
-    Progress,
-    TextColumn,
-    TimeRemainingColumn,
-    SpinnerColumn
-)
-
 
 # Consistent theme across all console output
-_THEME = Theme({
-    "logging.level.debug":    "dim cyan",
-    "logging.level.info":     "bold green",
-    "logging.level.warning":  "bold yellow",
-    "logging.level.error":    "bold red",
-    "logging.level.critical": "bold white on red",
-    "repr.number":            "bold cyan",
-    "repr.str":               "green",
-})
+_THEME = Theme(
+    {
+        "logging.level.debug": "dim cyan",
+        "logging.level.info": "bold green",
+        "logging.level.warning": "bold yellow",
+        "logging.level.error": "bold red",
+        "logging.level.critical": "bold white on red",
+        "repr.number": "bold cyan",
+        "repr.str": "green",
+    }
+)
 
 # Shared console instance — import this anywhere for consistent Rich output
 console = Console(theme=_THEME)
@@ -44,11 +40,11 @@ class MaCh3Logger:
         logger = get_logger(__name__)
     """
 
-    LEVELS = {
-        "DEBUG":    logging.DEBUG,
-        "INFO":     logging.INFO,
-        "WARNING":  logging.WARNING,
-        "ERROR":    logging.ERROR,
+    LEVELS: ClassVar[dict] = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
         "CRITICAL": logging.CRITICAL,
     }
 
@@ -60,8 +56,8 @@ class MaCh3Logger:
         self,
         name: str = "mach3sbi",
         level: str = "INFO",
-        log_file: Optional[Path] = None,
-        file_level: Optional[str] = None,
+        log_file: Path | None = None,
+        file_level: str | None = None,
         show_path: bool = False,
     ):
         """
@@ -85,7 +81,7 @@ class MaCh3Logger:
             show_path=show_path,
             rich_tracebacks=True,
             tracebacks_show_locals=True,
-            markup=True,            # allows [bold red]text[/] in log messages
+            markup=True,  # allows [bold red]text[/] in log messages
             log_time_format=self.DATEFMT,
         )
         self._logger.addHandler(rich_handler)
@@ -96,9 +92,7 @@ class MaCh3Logger:
             log_file.parent.mkdir(parents=True, exist_ok=True)
             fh = logging.FileHandler(log_file, mode="a", encoding="utf-8")
             fh.setLevel(self.LEVELS.get((file_level or "DEBUG").upper(), logging.DEBUG))
-            fh.setFormatter(
-                logging.Formatter(self.FILE_FORMAT, datefmt=self.DATEFMT)
-            )
+            fh.setFormatter(logging.Formatter(self.FILE_FORMAT, datefmt=self.DATEFMT))
             self._logger.addHandler(fh)
             self._logger.info(f"Logging to file: [cyan]{log_file}[/]")
 

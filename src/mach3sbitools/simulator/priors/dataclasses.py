@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-import torch
+
 import numpy as np
+import torch
+
 
 @dataclass(eq=False, repr=False)
 class PriorData(torch.nn.Module):
@@ -13,7 +15,7 @@ class PriorData(torch.nn.Module):
     def __post_init__(self):
         super().__init__()
 
-    def __getitem__(self, mask: torch.Tensor) -> 'PriorData':
+    def __getitem__(self, mask: torch.Tensor) -> "PriorData":
         # Lets us do some masking
 
         # Need this for the parameter names

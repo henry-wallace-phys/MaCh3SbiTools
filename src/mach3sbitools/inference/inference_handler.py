@@ -1,19 +1,18 @@
-from typing import List, Optional
 from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.utils.data import TensorDataset
-
 from sbi.inference import NPE
 from sbi.neural_nets import posterior_nn
+from torch.utils.data import TensorDataset
 
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
-from mach3sbitools.utils.device_handler import TorchDeviceHandler
-from .training import SBITrainer
-from mach3sbitools.utils.config import TrainingConfig, PosteriorConfig
-from mach3sbitools.utils.logger import get_logger
 from mach3sbitools.simulator import load_prior
+from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
+from mach3sbitools.utils.device_handler import TorchDeviceHandler
+from mach3sbitools.utils.logger import get_logger
+
+from .training import SBITrainer
 
 logger = get_logger(__name__)
 
@@ -27,7 +26,7 @@ class InferenceHandler:
     def __init__(
         self,
         prior_path: Path,
-        nuisance_pars: Optional[List[str]] = None,
+        nuisance_pars: list[str] | None = None,
     ):
         self.nuisance_pars = nuisance_pars
 
@@ -36,12 +35,12 @@ class InferenceHandler:
         if nuisance_pars is not None:
             self.prior.set_nuisance_filter(nuisance_pars)
 
-        self.dataset: Optional[ParaketDataset] = None
-        self.inference: Optional[NPE] = None
+        self.dataset: ParaketDataset | None = None
+        self.inference: NPE | None = None
         self.posterior = None
 
-        self._density_estimator: Optional[nn.Module] = None
-        self._tensor_dataset: Optional[TensorDataset] = None
+        self._density_estimator: nn.Module | None = None
+        self._tensor_dataset: TensorDataset | None = None
         self.device_handler = TorchDeviceHandler()
 
     # ── Data ─────────────────────────────────────────────────────────────────
@@ -49,7 +48,9 @@ class InferenceHandler:
     def set_dataset(self, data_folder: Path) -> None:
         """Point the interface at a folder of feather files."""
         self.dataset = ParaketDataset(data_folder, self.nuisance_pars)
-        logger.info(f"Dataset set: [bold]{len(self.dataset)}[/] files in [cyan]{data_folder}[/]")
+        logger.info(
+            f"Dataset set: [bold]{len(self.dataset)}[/] files in [cyan]{data_folder}[/]"
+        )
 
     def load_training_data(self) -> None:
         """
@@ -138,9 +139,9 @@ class InferenceHandler:
         density_estimator = self.inference._build_neural_net(sample_theta, sample_x)
 
         trainer = SBITrainer(
-                dataset=self._tensor_dataset,
-                config=config,
-                device=self.device_handler.device,
+            dataset=self._tensor_dataset,
+            config=config,
+            device=self.device_handler.device,
         )
 
         self._density_estimator = trainer.train(
@@ -159,7 +160,7 @@ class InferenceHandler:
     def sample_posterior(
         self,
         num_samples: int,
-        x: List[float],
+        x: list[float],
         **kwargs,
     ) -> torch.Tensor:
         logger.info(f"Sampling [bold]{num_samples:,}[/] points from posterior")
