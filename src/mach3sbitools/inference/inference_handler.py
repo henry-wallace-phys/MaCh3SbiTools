@@ -36,7 +36,6 @@ class InferenceHandler:
         :param nuisance_pars: Nuisance parameters to filter by
         """
 
-
         self.prior = load_prior(prior_path)
         # Might as well grab this from the prior
         self.parameter_names = self.prior.prior_data.parameter_names
@@ -62,7 +61,9 @@ class InferenceHandler:
         :return:
         """
 
-        self.dataset = ParaketDataset(data_folder, self.parameter_names, self.nuisance_pars)
+        self.dataset = ParaketDataset(
+            data_folder, self.parameter_names, self.nuisance_pars
+        )
         logger.info(
             f"Dataset set: [bold]{len(self.dataset)}[/] files in [cyan]{data_folder}[/]"
         )
@@ -198,7 +199,9 @@ class InferenceHandler:
         x_tensor = torch.tensor(
             [x], dtype=torch.float32, device=self.device_handler.device
         )
-        return cast(torch.Tensor, self.posterior.sample((num_samples,), x=x_tensor, **kwargs))
+        return cast(
+            torch.Tensor, self.posterior.sample((num_samples,), x=x_tensor, **kwargs)
+        )
 
     def load_posterior(
         self,

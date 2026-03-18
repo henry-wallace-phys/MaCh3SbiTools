@@ -53,7 +53,9 @@ def save_checkpoint(
     """
     ckpt = {
         "epoch": epoch,
-        "model_state": {k: v.cpu().clone() for k, v in density_estimator.state_dict().items()},
+        "model_state": {
+            k: v.cpu().clone() for k, v in density_estimator.state_dict().items()
+        },
         "optimizer_state": optimizer.state_dict(),
         "warmup_scheduler_state": warmup_scheduler.state_dict(),
         "plateau_scheduler_state": plateau_scheduler.state_dict(),
@@ -115,7 +117,9 @@ class SBITrainer:
         logger.info(f"  Run: [bold]tensorboard --logdir {tb_dir}[/]")
         return TensorBoardWriter(str(tb_dir), self.device_type)
 
-    def _build_dataloaders(self, dataset: TensorDataset) -> tuple[DataLoader, DataLoader]:
+    def _build_dataloaders(
+        self, dataset: TensorDataset
+    ) -> tuple[DataLoader, DataLoader]:
         n_val = int(len(dataset) * self.config.validation_fraction)
         n_train = len(dataset) - n_val
 
@@ -207,7 +211,8 @@ class SBITrainer:
                 self.ema_val_loss = (
                     val_loss
                     if self.ema_val_loss is None
-                    else self.config.ema_alpha * val_loss + (1 - self.config.ema_alpha) * self.ema_val_loss
+                    else self.config.ema_alpha * val_loss
+                    + (1 - self.config.ema_alpha) * self.ema_val_loss
                 )
 
                 self._step_schedulers(epoch)
@@ -258,7 +263,9 @@ class SBITrainer:
 
             self.optimizer.zero_grad(set_to_none=True)
 
-            with autocast(device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp):
+            with autocast(
+                device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp
+            ):
                 loss = model.loss(theta, x).mean()
 
             self.scaler.scale(loss).backward()
@@ -285,7 +292,11 @@ class SBITrainer:
                 theta = theta.to(self.device, non_blocking=True)
                 x = x.to(self.device, non_blocking=True)
 
-                with autocast(device_type=self.device_type, dtype=torch.bfloat16, enabled=self.use_amp):
+                with autocast(
+                    device_type=self.device_type,
+                    dtype=torch.bfloat16,
+                    enabled=self.use_amp,
+                ):
                     total_loss += model.loss(theta, x).mean().item()
 
         return total_loss / len(self.val_loader)
@@ -299,12 +310,14 @@ class SBITrainer:
     def _update_best_state(self, model: nn.Module) -> None:
         if self.best_val_loss is None:
             self._set_best_state(model)
-        elif self.ema_val_loss < self.best_val_loss :
+        elif self.ema_val_loss < self.best_val_loss:
             self._set_best_state(model)
         else:
             self.epochs_no_improve += 1
 
-    def _resume_if_requested(self, model: nn.Module, resume_checkpoint: Path | None) -> int:
+    def _resume_if_requested(
+        self, model: nn.Module, resume_checkpoint: Path | None
+    ) -> int:
         """Load checkpoint state into all components; return start epoch."""
         if not resume_checkpoint:
             return 1
@@ -314,7 +327,6 @@ class SBITrainer:
 
         if self.warmup is None or self.plateau is None or self.scaler is None:
             raise SBITrainingException("Schedulers not provided")
-
 
         ckpt = torch.load(resume_checkpoint, map_location="cpu")
         model.load_state_dict(ckpt["model_state"])
@@ -367,7 +379,9 @@ class SBITrainer:
 
     # ── Logging ───────────────────────────────────────────────────────────────
 
-    def _log_epoch(self, epoch: int, train_loss: float, val_loss: float, elapsed: float) -> None:
+    def _log_epoch(
+        self, epoch: int, train_loss: float, val_loss: float, elapsed: float
+    ) -> None:
         if self.optimizer is None:
             raise OptimizerNotSpecified("Optimizer not provided")
 
@@ -411,19 +425,33 @@ class SBITrainer:
         if self.warmup is None or self.plateau is None or self.scaler is None:
             raise SBITrainingException("Schedulers not provided")
 
-
         if self.epochs_no_improve == 0:
             save_checkpoint(
-                epoch, model, self.optimizer, self.warmup, self.plateau, self.scaler,
-                self.best_val_loss, self.epochs_no_improve,
-                self.config.save_path, training_config=self.config, use_unique_path=False,
+                epoch,
+                model,
+                self.optimizer,
+                self.warmup,
+                self.plateau,
+                self.scaler,
+                self.best_val_loss,
+                self.epochs_no_improve,
+                self.config.save_path,
+                training_config=self.config,
+                use_unique_path=False,
             )
 
         if epoch % self.config.autosave_every == 0:
             save_checkpoint(
-                epoch, model, self.optimizer, self.warmup, self.plateau, self.scaler,
-                self.best_val_loss, self.epochs_no_improve,
-                self.config.save_path, training_config=self.config,
+                epoch,
+                model,
+                self.optimizer,
+                self.warmup,
+                self.plateau,
+                self.scaler,
+                self.best_val_loss,
+                self.epochs_no_improve,
+                self.config.save_path,
+                training_config=self.config,
             )
 
     # ── Static utilities ──────────────────────────────────────────────────────

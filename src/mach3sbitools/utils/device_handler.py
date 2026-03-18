@@ -10,6 +10,7 @@ class TorchDeviceHandler:
     """
     Handles the device casting + tracking
     """
+
     def __init__(self):
         """
         Constructor

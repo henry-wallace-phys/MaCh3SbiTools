@@ -77,7 +77,8 @@ class SimulatorProtocol(Protocol):
     # Get the covariance matrix
     def get_covariance_matrix(self) -> np.ndarray: ...
 
-def _implements(proto: type)->Callable[[type], type]:
+
+def _implements(proto: type) -> Callable[[type], type]:
     # Thanks stack overflow
     # https://stackoverflow.com/questions/62922935/python-check-if-class-implements-unrelated-interface
     """Creates a decorator for classes that checks that the decorated class implements the runtime protocol `proto`"""

@@ -11,7 +11,12 @@ class ParaketDataset(Dataset):
     """File-level dataset — one __getitem__ = one feather file.
     Use .to_tensor_dataset() before training."""
 
-    def __init__(self, data_folder: Path, parameter_names: list[str], nuisance_params: list[str] | None = None):
+    def __init__(
+        self,
+        data_folder: Path,
+        parameter_names: list[str],
+        nuisance_params: list[str] | None = None,
+    ):
         """
         Constructor for ParaketDataset. This reads a folder of .feather files and constructors a
         torch TensorDataset
@@ -28,8 +33,10 @@ class ParaketDataset(Dataset):
     def __len__(self):
         return len(self.files)
 
-    def __getitem__(self, idx)->tuple[torch.Tensor, torch.Tensor]:
-        theta, x = from_feather(self.files[idx], self.parameter_names, self.nuisance_params)
+    def __getitem__(self, idx) -> tuple[torch.Tensor, torch.Tensor]:
+        theta, x = from_feather(
+            self.files[idx], self.parameter_names, self.nuisance_params
+        )
         return torch.from_numpy(theta), torch.from_numpy(x)
 
     def to_tensor_dataset(

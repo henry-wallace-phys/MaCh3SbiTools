@@ -11,8 +11,9 @@ def simulator(dummy_config):
         module_name="dummy_simulator",
         class_name="DummySimulator",
         config=dummy_config,
-        cyclical_pars=['theta_9']
+        cyclical_pars=["theta_9"],
     )
+
 
 def test_simulate_returns_at_most_n_samples(simulator):
     """Since bad simulations are skipped, we should get at most n_sims back"""
@@ -36,15 +37,17 @@ def test_simulate_x_is_poisson_distributed(simulator):
     for bin_idx in range(x.shape[1]):
         bin_values = x[:, bin_idx]
 
-        # Poisson(1): test counts for k=0,1,2,3,4+ 
+        # Poisson(1): test counts for k=0,1,2,3,4+
         max_k = 5
-        observed_counts = np.array([
-            np.sum(bin_values == k) for k in range(max_k)
-        ] + [np.sum(bin_values >= max_k)])
+        observed_counts = np.array(
+            [np.sum(bin_values == k) for k in range(max_k)]
+            + [np.sum(bin_values >= max_k)]
+        )
 
-        expected_probs = np.array([
-            stats.poisson.pmf(k, mu=1) for k in range(max_k)
-        ] + [1 - stats.poisson.cdf(max_k - 1, mu=1)])
+        expected_probs = np.array(
+            [stats.poisson.pmf(k, mu=1) for k in range(max_k)]
+            + [1 - stats.poisson.cdf(max_k - 1, mu=1)]
+        )
         expected_counts = expected_probs * n_sims
 
         # Chi-squared goodness of fit

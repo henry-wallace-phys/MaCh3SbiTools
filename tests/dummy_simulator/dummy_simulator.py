@@ -12,6 +12,7 @@ class DummySimulator:
     def __init__(self, _: str) -> None:
         # Dummy config will do nothing
         ...
+
     @property
     def n_params(self):
         return THETA_DIM
@@ -19,14 +20,14 @@ class DummySimulator:
     def simulate(self, theta: Sequence[float]) -> Sequence[float]:
         return np.ones(X_DIM)
 
-    def get_parameter_names(self)-> Sequence[str]:
-        return [f'theta_{i}' for i in range(THETA_DIM)]
+    def get_parameter_names(self) -> Sequence[str]:
+        return [f"theta_{i}" for i in range(THETA_DIM)]
 
     def get_is_flat(self, i: int) -> bool:
         # Have some flat params
-        return i<3
+        return i < 3
 
-    def get_data_bins(self)->Sequence[float]:
+    def get_data_bins(self) -> Sequence[float]:
         return np.ones(X_DIM)
 
     def get_parameter_bounds(self) -> BoundaryConditions:
@@ -43,11 +44,11 @@ class DummySimulator:
 
         return lower, upper
 
-    def get_parameter_nominals(self)->Sequence[float]:
+    def get_parameter_nominals(self) -> Sequence[float]:
         return np.ones(THETA_DIM)
 
-    def get_parameter_errors(self)->Sequence[float]:
+    def get_parameter_errors(self) -> Sequence[float]:
         return np.ones(THETA_DIM)
 
-    def get_covariance_matrix(self)->np.ndarray:
+    def get_covariance_matrix(self) -> np.ndarray:
         return np.identity(THETA_DIM, dtype=np.float32)

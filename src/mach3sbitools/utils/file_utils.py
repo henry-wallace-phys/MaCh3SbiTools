@@ -13,7 +13,9 @@ class FeatherOutput(TypedDict):
     theta: SimulatorData
 
 
-def filter_nuisance(parameter_names: list[str], nuisance_pars: list[str], theta: SimulatorData)->SimulatorData:
+def filter_nuisance(
+    parameter_names: list[str], nuisance_pars: list[str], theta: SimulatorData
+) -> SimulatorData:
     """
     Filters out nuisance parameters + reduces the size of input parameter array
 
@@ -22,7 +24,7 @@ def filter_nuisance(parameter_names: list[str], nuisance_pars: list[str], theta:
     :param theta: Theta values
     :return:
     """
-    if len(theta[0])!=len(parameter_names):
+    if len(theta[0]) != len(parameter_names):
         raise ValueError("Parameter names and theta must have same length")
 
     if nuisance_pars is None:
@@ -38,8 +40,10 @@ def filter_nuisance(parameter_names: list[str], nuisance_pars: list[str], theta:
 
     return theta[:, param_filter].copy()
 
-def from_feather(file_name: Path, parameter_names: list[str],
-                 nuisance_pars: list[str] | None=None)->SimulatorDataGrouped:
+
+def from_feather(
+    file_name: Path, parameter_names: list[str], nuisance_pars: list[str] | None = None
+) -> SimulatorDataGrouped:
     """
     Gets parameters from a feather file
     :param file_name: File to load
@@ -63,10 +67,12 @@ def from_feather(file_name: Path, parameter_names: list[str],
 
     return theta, x
 
-def to_feather(file_name: Path,
-               theta_values: SimulatorData,
-               x_values: SimulatorData,
-               )->None:
+
+def to_feather(
+    file_name: Path,
+    theta_values: SimulatorData,
+    x_values: SimulatorData,
+) -> None:
     """
     Stores files in a feather format
     :param file_name: File to store in
@@ -78,10 +84,7 @@ def to_feather(file_name: Path,
     if file_name.suffix != ".feather":
         raise ValueError("Must store outputs files with the *.feather extension")
 
-    param_dict: FeatherOutput = {
-        'x': x_values.tolist(),
-        'theta': theta_values.tolist()
-    }
+    param_dict: FeatherOutput = {"x": x_values.tolist(), "theta": theta_values.tolist()}
 
     param_table = Table.from_pydict(param_dict)
 

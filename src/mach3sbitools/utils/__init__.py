@@ -11,5 +11,5 @@ __all__ = [
     "filter_nuisance",
     "from_feather",
     "get_logger",
-    "to_feather"
+    "to_feather",
 ]

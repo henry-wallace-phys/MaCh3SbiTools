@@ -11,6 +11,7 @@ N_SAMPLES = 10000
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="session")
 def dummy_sim():
     return DummySimulator(None)
@@ -23,7 +24,12 @@ def nominal_observation(dummy_sim):
     matching the dtype the network was trained on.
     """
     rng = np.random.default_rng(42)
-    return rng.poisson(lam=1, size=len(dummy_sim.get_data_bins())).astype(np.float32).tolist()
+    return (
+        rng.poisson(lam=1, size=len(dummy_sim.get_data_bins()))
+        .astype(np.float32)
+        .tolist()
+    )
+
 
 @pytest.fixture(scope="session")
 def trained_handler(prior_save, dummy_data_dir, posterior_config, training_config):
@@ -43,6 +49,7 @@ def samples(trained_handler, nominal_observation):
 
 
 # ── Setup / guard tests ────────────────────────────────────────────────────────
+
 
 def test_no_dataset_load(prior_save):
     """load_training_data should raise if set_dataset was never called."""
@@ -87,6 +94,7 @@ def test_train(trained_handler):
 
 # ── Output shape / type ────────────────────────────────────────────────────────
 
+
 def test_total_samples(samples):
     assert len(samples) == N_SAMPLES
 
@@ -115,6 +123,7 @@ def test_samples_within_prior_bounds(samples, trained_handler):
 
 
 # ── Posterior quality ──────────────────────────────────────────────────────────
+
 
 def test_posterior_mean_near_nominal(samples, trained_handler):
     """
@@ -155,10 +164,13 @@ def test_posterior_reproducible_with_same_seed(trained_handler, nominal_observat
         "Posterior sampling is not reproducible with the same seed"
     )
 
+
 # ── Checkpoint / save-load ─────────────────────────────────────────────────────
 
-def test_save_and_load_posterior(trained_handler, tmp_path, prior_save,
-                                  posterior_config, nominal_observation):
+
+def test_save_and_load_posterior(
+    trained_handler, tmp_path, prior_save, posterior_config, nominal_observation
+):
     ckpt_path = tmp_path / "density_estimator.pt"
     torch.save(trained_handler._density_estimator.state_dict(), ckpt_path)
 
@@ -177,14 +189,21 @@ def test_save_and_load_posterior(trained_handler, tmp_path, prior_save,
     density_estimator.eval()
     loaded_handler._density_estimator = density_estimator
 
-    original_samples = trained_handler.sample_posterior(500, nominal_observation).cpu().numpy()
-    loaded_samples = loaded_handler.sample_posterior(500, nominal_observation).cpu().numpy()
+    original_samples = (
+        trained_handler.sample_posterior(500, nominal_observation).cpu().numpy()
+    )
+    loaded_samples = (
+        loaded_handler.sample_posterior(500, nominal_observation).cpu().numpy()
+    )
 
     for i in range(original_samples.shape[1]):
-        ks_stat, _ = stats.ks_2samp(original_samples[:, i], loaded_samples[:, i], method='asymp')
+        ks_stat, _ = stats.ks_2samp(
+            original_samples[:, i], loaded_samples[:, i], method="asymp"
+        )
         assert ks_stat < 0.1, (
             f"Parameter {i}: loaded posterior differs from original (KS={ks_stat:.3f})"
         )
+
 
 def test_x_dtype_matches_training(trained_handler, nominal_observation):
     """
@@ -198,6 +217,7 @@ def test_x_dtype_matches_training(trained_handler, nominal_observation):
         f"training data dtype {trained_x_dtype}. "
         f"Fix nominal_observation fixture or sample_posterior dtype cast."
     )
+
 
 def test_x_shape_matches_training(trained_handler, nominal_observation):
     """

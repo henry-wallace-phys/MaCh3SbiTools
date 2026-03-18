@@ -7,62 +7,71 @@ from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistrib
 
 
 @pytest.fixture(scope="session")
-def cyclical_distribution()->CyclicalDistribution:
+def cyclical_distribution() -> CyclicalDistribution:
     nominals = torch.ones(1)
-    lower_bounds = -2*torch.pi*torch.ones(1)
+    lower_bounds = -2 * torch.pi * torch.ones(1)
     upper_bounds = 2 * torch.pi * torch.ones(1)
     return CyclicalDistribution(nominals, lower_bounds, upper_bounds)
 
 
 def test_cyclical_bound_error():
-    nominals = torch.tensor([1,1])
-    lower_bounds = torch.tensor([0, -2*torch.pi])
-    upper_bounds =  2 * torch.pi * torch.ones(2)
+    nominals = torch.tensor([1, 1])
+    lower_bounds = torch.tensor([0, -2 * torch.pi])
+    upper_bounds = 2 * torch.pi * torch.ones(2)
     # Check lower bounds wrong
     with pytest.raises(NotImplementedError):
         CyclicalDistribution(nominals, lower_bounds, upper_bounds)
 
     # Check upper bounds wrong
     lower_bounds = -2 * torch.pi * torch.ones(2)
-    upper_bounds = torch.tensor([1, 2*torch.pi])
+    upper_bounds = torch.tensor([1, 2 * torch.pi])
     with pytest.raises(NotImplementedError):
         CyclicalDistribution(nominals, lower_bounds, upper_bounds)
+
 
 def test_log_prob(cyclical_distribution):
     theta_values = torch.tensor([[0.0], [10.0], [1.0]], dtype=torch.double)
 
     # Need to calculate the likelihood
-    l_one = 0.5*(np.sin(0.25*(1+2*np.pi))**2)/np.pi
+    l_one = 0.5 * (np.sin(0.25 * (1 + 2 * np.pi)) ** 2) / np.pi
     llh_one = np.log(l_one)
-    expected_log_pdf = torch.tensor([[np.log(0.5/np.pi)], [torch.tensor(np.float64("-inf"))], [llh_one]], dtype=torch.double)
+    expected_log_pdf = torch.tensor(
+        [[np.log(0.5 / np.pi)], [torch.tensor(np.float64("-inf"))], [llh_one]],
+        dtype=torch.double,
+    )
 
     likelihoods = cyclical_distribution.log_prob(theta_values)
     assert torch.allclose(likelihoods, expected_log_pdf)
 
+
 def test_cdf(cyclical_distribution):
     theta_values = torch.tensor([[0.0], [10.0], [1.0]], dtype=torch.double)
 
-    cdf_one = 0.5*(0.5+np.sin(0.5)+np.pi)/np.pi
-    expected_cdf = torch.tensor([[1/2], [1], [cdf_one]], dtype=torch.double)
+    cdf_one = 0.5 * (0.5 + np.sin(0.5) + np.pi) / np.pi
+    expected_cdf = torch.tensor([[1 / 2], [1], [cdf_one]], dtype=torch.double)
     cdf = cyclical_distribution.cdf(theta_values)
 
     assert torch.allclose(cdf, expected_cdf)
+
 
 def test_sample_shape(cyclical_distribution):
     """Samples have the correct shape."""
     samples = cyclical_distribution.sample(torch.Size([100]))
     assert samples.shape == torch.Size([100, 1])
 
+
 def test_sample_shape_scalar(cyclical_distribution):
     """Calling sample() with no arguments returns a single event."""
     samples = cyclical_distribution.sample()
     assert samples.shape == torch.Size([1])
+
 
 def test_sample_in_bounds(cyclical_distribution):
     """All samples fall within [-2pi, 2pi]."""
     samples = cyclical_distribution.sample(torch.Size([1000]))
     assert torch.all(samples >= -2 * torch.pi)
     assert torch.all(samples <= 2 * torch.pi)
+
 
 def test_sample_mean(cyclical_distribution):
     """
@@ -71,6 +80,7 @@ def test_sample_mean(cyclical_distribution):
     """
     samples = cyclical_distribution.sample(torch.Size([10_000]))
     assert torch.abs(samples.mean()) < 0.1
+
 
 def test_sample_cdf_uniformity(cyclical_distribution):
     """
@@ -84,15 +94,20 @@ def test_sample_cdf_uniformity(cyclical_distribution):
     assert torch.abs(u.mean() - 0.5) < 0.01
     assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.01
 
+
 def test_sample_ks(cyclical_distribution):
     """
     Kolmogorov-Smirnov test against the empirical CDF.
     Tests whether samples are consistent with the distribution at p>0.05.
     """
     samples = cyclical_distribution.sample(torch.Size([500_000])).squeeze().numpy()
-    result = kstest(samples, lambda x: cyclical_distribution.cdf(
-        torch.tensor(x, dtype=torch.double).unsqueeze(-1)
-    ).squeeze().numpy())
+    result = kstest(
+        samples,
+        lambda x: (
+            cyclical_distribution.cdf(torch.tensor(x, dtype=torch.double).unsqueeze(-1))
+            .squeeze()
+            .numpy()
+        ),
+    )
 
     assert result.pvalue > 0.001
-

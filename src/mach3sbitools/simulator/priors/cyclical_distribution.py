@@ -4,7 +4,12 @@ import torch.distributions
 
 
 class CyclicalDistribution(torch.distributions.Distribution):
-    def __init__(self, nominals: torch.Tensor, lower_bounds: torch.Tensor, upper_bounds: torch.Tensor):
+    def __init__(
+        self,
+        nominals: torch.Tensor,
+        lower_bounds: torch.Tensor,
+        upper_bounds: torch.Tensor,
+    ):
         """
         Technically the constructor is a bit pointlesss... but it's here
         in case I decide to go to bounds that aren't ±2pi
@@ -40,7 +45,9 @@ class CyclicalDistribution(torch.distributions.Distribution):
         in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)
         pdf = torch.zeros(theta.shape, dtype=torch.double)
 
-        pdf[in_bounds] = (0.5 / torch.pi) * (torch.sin((theta[in_bounds] + 2 * torch.pi) / 4) ** 2)
+        pdf[in_bounds] = (0.5 / torch.pi) * (
+            torch.sin((theta[in_bounds] + 2 * torch.pi) / 4) ** 2
+        )
 
         return pdf
 
@@ -48,24 +55,31 @@ class CyclicalDistribution(torch.distributions.Distribution):
         cdf = torch.zeros(theta.shape, dtype=torch.double)
 
         in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)
-        cdf[in_bounds] = (0.5 / torch.pi) * (theta[in_bounds] / 2 + torch.sin(theta[in_bounds] / 2) + torch.pi)
+        cdf[in_bounds] = (0.5 / torch.pi) * (
+            theta[in_bounds] / 2 + torch.sin(theta[in_bounds] / 2) + torch.pi
+        )
         cdf[theta > self.upper_bounds] = 1.0
         return cdf
 
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
         pdf = self.pdf(value)
-        in_bounds = torch.abs(pdf)>1e-8
+        in_bounds = torch.abs(pdf) > 1e-8
 
         pdf[in_bounds] = torch.log(pdf[in_bounds])
         pdf[~in_bounds] = -np.inf
 
         return pdf
 
-    def _build_cdf_grid(self, n_points: int = 10_000) -> tuple[torch.Tensor, torch.Tensor]:
+    def _build_cdf_grid(
+        self, n_points: int = 10_000
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Precompute a lookup table of (theta, CDF(theta)) over the valid range."""
         theta_grid = torch.linspace(
-            -2 * torch.pi, 2 * torch.pi, n_points,
-            dtype=torch.double, device=self.device
+            -2 * torch.pi,
+            2 * torch.pi,
+            n_points,
+            dtype=torch.double,
+            device=self.device,
         )
         cdf_grid = self.cdf(theta_grid)
         return theta_grid, cdf_grid
@@ -87,18 +101,21 @@ class CyclicalDistribution(torch.distributions.Distribution):
         indices = torch.searchsorted(cdf_grid, u_flat).clamp(0, n_points - 1)
         return theta_grid[indices].reshape(u.shape)
 
-    def sample(self, sample_shape: torch.Size | list[int] | tuple[int, ...] = torch.Size()) -> torch.Tensor:
+    def sample(
+        self, sample_shape: torch.Size | list[int] | tuple[int, ...] = torch.Size()
+    ) -> torch.Tensor:
         """Inverse transform sampling using a precomputed CDF lookup table."""
         if not sample_shape:
-            n_samples=1
+            n_samples = 1
         elif isinstance(sample_shape, torch.Size):
             n_samples = sample_shape.numel()
         else:
             n_samples = len(sample_shape)
 
-
         theta_grid, cdf_grid = self._build_cdf_grid()
-        u = self._sample_uniform_cdf(n_samples, cdf_min=cdf_grid[0], cdf_max=cdf_grid[-1])
+        u = self._sample_uniform_cdf(
+            n_samples, cdf_min=cdf_grid[0], cdf_max=cdf_grid[-1]
+        )
         samples = self._invert_cdf(u, theta_grid, cdf_grid)
 
         return samples.squeeze(0) if not sample_shape else samples

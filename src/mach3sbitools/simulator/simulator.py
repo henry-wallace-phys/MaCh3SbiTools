@@ -17,6 +17,7 @@ class Simulator:
     """
     Wraps around a simulator protocol object.
     """
+
     def __init__(
         self,
         module_name: str,
@@ -55,7 +56,7 @@ class Simulator:
 
         valid_theta = np.empty_like(theta)
         valid_x = None
-        count = 0 # Keep track of good simulations
+        count = 0  # Keep track of good simulations
 
         for i, t in enumerate(tqdm(theta, desc="Simulating")):
             try:
@@ -63,15 +64,18 @@ class Simulator:
                 x_sample = np.random.poisson(x)
 
                 if valid_x is None:
-                    valid_x = np.empty((n_samples, *x_sample.shape),
-                                       dtype=x_sample.dtype)
+                    valid_x = np.empty(
+                        (n_samples, *x_sample.shape), dtype=x_sample.dtype
+                    )
                 valid_theta[count] = t
                 valid_x[count] = x_sample
                 count += 1
             except Exception:
                 logger.warning("Error: Bad simulation! Skipping sample.")
 
-        return valid_theta[:count], valid_x[:count] if valid_x is not None else np.array([])
+        return valid_theta[:count], valid_x[
+            :count
+        ] if valid_x is not None else np.array([])
 
     def save(
         self,

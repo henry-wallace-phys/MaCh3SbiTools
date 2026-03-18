@@ -183,14 +183,18 @@ class Prior(torch.distributions.Distribution):
         sample_shape = torch.Size(sample_shape)  # ← normalize tuple → torch.Size
         samples = torch.empty(*sample_shape, self.n_params, dtype=torch.double)
         for mask_map in self._priors:
-            samples[..., mask_map.mask] = mask_map.distribution.sample(sample_shape).to(torch.double)
+            samples[..., mask_map.mask] = mask_map.distribution.sample(sample_shape).to(
+                torch.double
+            )
         return samples
 
     def rsample(self, sample_shape=torch.Size([])):
         sample_shape = torch.Size(sample_shape)
         samples = torch.empty(*sample_shape, self.n_params, dtype=torch.double)
         for mask_map in self._priors:
-            samples[..., mask_map.mask] = mask_map.distribution.rsample(sample_shape).to(torch.double)
+            samples[..., mask_map.mask] = mask_map.distribution.rsample(
+                sample_shape
+            ).to(torch.double)
         return samples
 
     def check_bounds(self, params: torch.Tensor) -> torch.Tensor:
@@ -250,6 +254,7 @@ def _check_boundary(
                 *param_info
             )
         )
+
 
 def create_prior(
     simulator_instance: SimulatorProtocol,
@@ -314,6 +319,8 @@ def load_prior(prior_path: Path, device=torch.device("cpu")) -> Prior:
         prior = pickle.load(f)
 
     if not isinstance(prior, Prior):
-        raise PriorNotFound("No valid prior in %s. Instead found %s", prior_path, type(prior))
+        raise PriorNotFound(
+            "No valid prior in %s. Instead found %s", prior_path, type(prior)
+        )
 
     return prior.to(device)
