@@ -23,7 +23,7 @@ class TrainingConfig:
     show_epoch_progress: bool = True
     compile: bool = False
     warmup_epochs: int = 50
-    ema_alpha = 0.05
+    ema_alpha: float = 0.05
 
 @dataclass
 class PosteriorConfig:

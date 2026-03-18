@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "2.0.0"
+version = "2.1.0"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,10 +13,13 @@ dependencies = [
     "ipykernel",
     "ipywidgets",
     "click",
-    "arrow"
-    "pynvml"
+    "arrow",
+    "click",
+    "scipy-stubs~=1.17.1",
+    "arviz",
+    "pytest,"
+    "pytest-cov",
 ]
 
 [project.scripts]
-sample_mach3 = "mach3sbitools.apps.__main_sample_mach3__:main"
-build_posterior = "mach3sbitools.apps.__main_build_posterior__:main"
+mach3sbi = "mach3sbitools.apps.main_cli:cli"

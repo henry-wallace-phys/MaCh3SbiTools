@@ -1,7 +1,5 @@
-import fnmatch
-import pickle as pkl
-from pathlib import Path
 from typing import List, Optional
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -10,33 +8,33 @@ from torch.utils.data import TensorDataset
 from sbi.inference import NPE
 from sbi.neural_nets import posterior_nn
 
-from mach3sbitools.mach3_interface.mach3_simulator import MaCh3Simulator
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
 from mach3sbitools.utils.device_handler import TorchDeviceHandler
-from .sbi_trainer import SBITrainer
-from .sbi_trainer_legacy import SBITrainerLegacy
+from .training import SBITrainer
 from mach3sbitools.utils.config import TrainingConfig, PosteriorConfig
 from mach3sbitools.utils.logger import get_logger
+from mach3sbitools.simulator import load_prior
 
 logger = get_logger(__name__)
 
 
-class MaCh3SBIInterface:
+class InferenceHandler:
     """
-    High-level interface combining MaCh3 simulation, data loading,
+    High-level interface combining simulation, data loading,
     and NPE training with a custom high-performance training loop.
     """
 
     def __init__(
         self,
-        mach3_name: str,
-        config_file: Path,
+        prior_path: Path,
         nuisance_pars: Optional[List[str]] = None,
-        cyclical_pars: List[str] | None = None,
     ):
-        self.simulator = MaCh3Simulator(mach3_name, config_file, nuisance_pars, cyclical_pars)
         self.nuisance_pars = nuisance_pars
-        self.mach3_name = mach3_name
+
+        self.prior = load_prior(prior_path)
+
+        if nuisance_pars is not None:
+            self.prior.set_nuisance_filter(nuisance_pars)
 
         self.dataset: Optional[ParaketDataset] = None
         self.inference: Optional[NPE] = None
@@ -44,15 +42,13 @@ class MaCh3SBIInterface:
 
         self._density_estimator: Optional[nn.Module] = None
         self._tensor_dataset: Optional[TensorDataset] = None
-        self._nuisance_mask: Optional[torch.BoolTensor] = None
-
         self.device_handler = TorchDeviceHandler()
 
     # ── Data ─────────────────────────────────────────────────────────────────
 
     def set_dataset(self, data_folder: Path) -> None:
         """Point the interface at a folder of feather files."""
-        self.dataset = ParaketDataset(data_folder)
+        self.dataset = ParaketDataset(data_folder, self.nuisance_pars)
         logger.info(f"Dataset set: [bold]{len(self.dataset)}[/] files in [cyan]{data_folder}[/]")
 
     def load_training_data(self) -> None:
@@ -65,19 +61,8 @@ class MaCh3SBIInterface:
             raise ValueError("Call set_dataset() before load_training_data().")
 
         # Build nuisance mask if needed
-        parameter_names = self.simulator.mach3_wrapper.get_parameter_names()
-        if self.nuisance_pars is not None:
-            mask = [
-                not any(fnmatch.fnmatch(name, n) for n in self.nuisance_pars)
-                for name in parameter_names
-            ]
-            self._nuisance_mask = torch.tensor(mask, dtype=torch.bool)
-        else:
-            self._nuisance_mask = None
-
         self._tensor_dataset = self.dataset.to_tensor_dataset(
             device="cpu",
-            nuisance_mask=self._nuisance_mask,
         )
 
     # ── Model ─────────────────────────────────────────────────────────────────
@@ -102,7 +87,7 @@ class MaCh3SBIInterface:
         )
 
         self.inference = NPE(
-            prior=self.simulator.prior,
+            prior=self.prior,
             density_estimator=neural_net,
             device=self.device_handler.device,
         )
@@ -118,7 +103,6 @@ class MaCh3SBIInterface:
     def train_posterior(
         self,
         config: TrainingConfig,
-        use_legacy: bool = False,
         # resume_checkpoint: Optional[Path] = None,
     ) -> None:
         """
@@ -153,14 +137,7 @@ class MaCh3SBIInterface:
         sample_x = self._tensor_dataset.tensors[1][:100]
         density_estimator = self.inference._build_neural_net(sample_theta, sample_x)
 
-        if use_legacy:
-            trainer = SBITrainerLegacy(
-                dataset=self._tensor_dataset,
-                config=config,
-                device=self.device_handler.device,
-            )
-        else:
-            trainer = SBITrainer(
+        trainer = SBITrainer(
                 dataset=self._tensor_dataset,
                 config=config,
                 device=self.device_handler.device,
@@ -181,15 +158,12 @@ class MaCh3SBIInterface:
 
     def sample_posterior(
         self,
-        num_samples: int = 1000,
-        x: Optional[List[float]] = None,
+        num_samples: int,
+        x: List[float],
         **kwargs,
     ) -> torch.Tensor:
         logger.info(f"Sampling [bold]{num_samples:,}[/] points from posterior")
         self.build_posterior()
-
-        if x is None:
-            x = self.simulator.mach3_wrapper.get_data_bins()
 
         x_tensor = torch.tensor(
             [x], dtype=torch.float32, device=self.device_handler.device
@@ -224,8 +198,10 @@ class MaCh3SBIInterface:
 
         self.create_posterior(config)
 
-        x_dim = len(self.simulator.mach3_wrapper.get_data_bins())
-        theta_dim = self.simulator.prior.event_shape[0]
+        x_dim = self.prior.n_params
+        theta_dim = self.prior.event_shape[0]
+
+        # Need to build a dummy first
         density_estimator = self.inference._build_neural_net(
             torch.zeros(2, theta_dim),
             torch.zeros(2, x_dim),
@@ -236,4 +212,3 @@ class MaCh3SBIInterface:
         self._density_estimator = density_estimator
 
         logger.info(f"Density estimator loaded from [cyan]{checkpoint_path}[/]")
-    

@@ -4,14 +4,16 @@ from pyarrow import feather
 import numpy as np
 import torch
 from tqdm import tqdm
+import fnmatch
 
 class ParaketDataset(Dataset):
     """File-level dataset — one __getitem__ = one feather file.
     Use .to_tensor_dataset() before training."""
 
-    def __init__(self, data_folder: Path):
+    def __init__(self, data_folder: Path, nuisance_params: list[str] | None = None):
         self.data_folder = data_folder
         self.files = sorted(data_folder.glob("*.feather"))
+        self.nuisance_params = nuisance_params or []
 
     def __len__(self):
         return len(self.files)
@@ -19,13 +21,20 @@ class ParaketDataset(Dataset):
     def __getitem__(self, idx):
         table = feather.read_feather(str(self.files[idx]))
         theta = np.array(table['theta'].to_list(), dtype=np.float32)
+
+        # Filter nuisance
+        if self.nuisance_params is not None:
+            param_names = np.array(table['parameter_names'].to_list(), dtype=str)
+            param_filter = np.array([any(fnmatch.fnmatch(param, nuis) for nuis in self.nuisance_params)
+                                     for param in param_names], dtype=bool)
+            theta = theta[:, param_filter].copy()
+
         x = np.array(table['x'].to_list(), dtype=np.float32)
         return torch.from_numpy(theta), torch.from_numpy(x)
 
     def to_tensor_dataset(
         self,
         device: str = 'cpu',
-        nuisance_mask: torch.BoolTensor | None = None,
     ) -> TensorDataset:
         """
         Load all feather files into RAM once and return a flat TensorDataset.
@@ -35,8 +44,6 @@ class ParaketDataset(Dataset):
 
         for idx in tqdm(range(len(self)), desc="Pre-loading dataset"):
             theta, x = self[idx]
-            if nuisance_mask is not None:
-                theta = theta[:, nuisance_mask]
             all_theta.append(theta)
             all_x.append(x)
 
