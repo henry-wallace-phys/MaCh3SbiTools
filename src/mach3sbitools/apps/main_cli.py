@@ -3,7 +3,6 @@ from pathlib import Path
 import click
 import pandas as pd
 from pyarrow import parquet as pq
-from pymc import observe
 
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.simulator import Simulator, create_prior, get_simulator

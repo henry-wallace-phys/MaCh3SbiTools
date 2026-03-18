@@ -1,11 +1,11 @@
 import importlib
 import inspect
 import pkgutil
+from collections.abc import Callable
 from difflib import get_close_matches
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Protocol, runtime_checkable, cast
-from collections.abc import Callable
+from typing import Protocol, cast, runtime_checkable
 
 import numpy as np
 

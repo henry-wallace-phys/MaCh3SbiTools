@@ -15,7 +15,7 @@ import fnmatch
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeAlias, cast
+from typing import TypeAlias
 
 import numpy as np
 import torch

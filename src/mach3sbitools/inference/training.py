@@ -1,16 +1,17 @@
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 import torch
 import torch.nn as nn
-from contextlib import nullcontext
 from torch.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import LinearLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
 from mach3sbitools.utils.config import TrainingConfig
 from mach3sbitools.utils.logger import create_progress, get_logger
+
 from .tensorboard_writer import TensorBoardWriter
 
 logger = get_logger()

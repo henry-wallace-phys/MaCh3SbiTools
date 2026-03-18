@@ -5,7 +5,13 @@ from typing import ClassVar
 
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeRemainingColumn, TaskID
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeRemainingColumn,
+)
 from rich.theme import Theme
 
 # Consistent theme across all console output

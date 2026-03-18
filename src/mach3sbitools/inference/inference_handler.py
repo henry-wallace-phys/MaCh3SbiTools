@@ -3,9 +3,9 @@ from typing import cast
 
 import torch
 import torch.nn as nn
-from torch.utils.data import TensorDataset
 from sbi.inference import NPE
 from sbi.neural_nets import posterior_nn
+from torch.utils.data import TensorDataset
 
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
 from mach3sbitools.simulator import load_prior
