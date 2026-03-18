@@ -1,7 +1,7 @@
 import time
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -13,6 +13,11 @@ from mach3sbitools.utils.config import TrainingConfig
 from mach3sbitools.utils.logger import create_progress, get_logger
 
 from .tensorboard_writer import TensorBoardWriter
+
+from mach3sbitools.exceptions import (OptimizerNotSpecified,
+                                      ScalarNotSpecified,
+                                      DensityEstimatorError,
+                                      SBITrainingException)
 
 logger = get_logger()
 
@@ -92,7 +97,7 @@ class SBITrainer:
         self.best_val_loss: float = float("inf")
         self.best_state: dict[str, Any] | None = None
         self.epochs_no_improve: int = 0
-        self.ema_val_loss: float | None = None
+        self.ema_val_loss: float = float("inf")
 
         self.writer = self._init_tensorboard()
         self.train_loader, self.val_loader = self._build_dataloaders(dataset)
@@ -169,6 +174,9 @@ class SBITrainer:
         """
         density_estimator = self._maybe_compile(density_estimator)
 
+        if density_estimator is None:
+            raise DensityEstimatorError("No density estimator found")
+
         self.optimizer = optimizer or torch.optim.Adam(
             density_estimator.parameters(), lr=self.config.learning_rate
         )
@@ -179,7 +187,7 @@ class SBITrainer:
 
         density_estimator.to(self.device)
         self.best_state = self._clone_state(density_estimator)
-        self.ema_val_loss = None
+        self.ema_val_loss = float("inf")
 
         progress, epoch_task = create_progress(
             show_epoch=self.config.show_epoch_progress,
@@ -237,6 +245,12 @@ class SBITrainer:
         model.train()
         total_loss = 0.0
 
+        if self.optimizer is None:
+            raise OptimizerNotSpecified("Optimizer not provided")
+
+        if self.scaler is None:
+            raise ScalarNotSpecified("Scaler not provided")
+
         for theta, x in self.train_loader:
             theta = theta.to(self.device, non_blocking=True)
             x = x.to(self.device, non_blocking=True)
@@ -276,12 +290,16 @@ class SBITrainer:
         return total_loss / len(self.val_loader)
 
     # ── State management ──────────────────────────────────────────────────────
+    def _set_best_state(self, model: nn.Module) -> None:
+        self.best_val_loss = self.ema_val_loss
+        self.best_state = self._clone_state(model)
+        self.epochs_no_improve = 0
 
     def _update_best_state(self, model: nn.Module) -> None:
-        if self.ema_val_loss < self.best_val_loss:
-            self.best_val_loss = self.ema_val_loss
-            self.best_state = self._clone_state(model)
-            self.epochs_no_improve = 0
+        if self.best_val_loss is None:
+            self._set_best_state(model)
+        elif self.ema_val_loss < self.best_val_loss :
+            self._set_best_state(model)
         else:
             self.epochs_no_improve += 1
 
@@ -289,6 +307,13 @@ class SBITrainer:
         """Load checkpoint state into all components; return start epoch."""
         if not resume_checkpoint:
             return 1
+
+        if self.optimizer is None:
+            raise OptimizerNotSpecified("Optimizer not provided")
+
+        if self.warmup is None or self.plateau is None or self.scaler is None:
+            raise SBITrainingException("Schedulers not provided")
+
 
         ckpt = torch.load(resume_checkpoint, map_location="cpu")
         model.load_state_dict(ckpt["model_state"])
@@ -304,13 +329,16 @@ class SBITrainer:
                 if isinstance(v, torch.Tensor):
                     state[k] = v.to(self.device)
 
-        start_epoch = ckpt["epoch"] + 1
+        start_epoch = cast(int, ckpt["epoch"] + 1)
         logger.info(f"Resumed from {resume_checkpoint} | epoch {start_epoch}")
         return start_epoch
 
     # ── Scheduler helpers ─────────────────────────────────────────────────────
 
     def _build_schedulers(self) -> tuple[LinearLR, ReduceLROnPlateau]:
+        if self.optimizer is None:
+            raise OptimizerNotSpecified("Optimizer not provided")
+
         warmup = LinearLR(
             self.optimizer,
             start_factor=0.01,
@@ -328,6 +356,9 @@ class SBITrainer:
         return warmup, plateau
 
     def _step_schedulers(self, epoch: int) -> None:
+        if self.warmup is None or self.plateau is None:
+            raise SBITrainingException("Schedulers not provided")
+
         if epoch <= self.config.warmup_epochs:
             self.warmup.step()
         else:
@@ -336,6 +367,9 @@ class SBITrainer:
     # ── Logging ───────────────────────────────────────────────────────────────
 
     def _log_epoch(self, epoch: int, train_loss: float, val_loss: float, elapsed: float) -> None:
+        if self.optimizer is None:
+            raise OptimizerNotSpecified("Optimizer not provided")
+
         logger.info(
             f"Epoch {epoch:4d}/{self.config.max_epochs} | "
             f"train: {train_loss:.4f} | val: {val_loss:.4f} | ema_val: {self.ema_val_loss:.4f} | "
@@ -345,8 +379,13 @@ class SBITrainer:
     def _log_tensorboard(
         self, epoch: int, train_loss: float, val_loss: float, elapsed: float
     ) -> None:
+
         if not self.writer:
             return
+
+        if self.optimizer is None:
+            raise OptimizerNotSpecified("Optimizer not provided")
+
         self.writer.add_to_writer(
             epoch,
             train_loss,
@@ -364,6 +403,13 @@ class SBITrainer:
     def _maybe_save(self, epoch: int, model: nn.Module) -> None:
         if not self.config.save_path:
             return
+
+        if self.optimizer is None:
+            raise OptimizerNotSpecified("Optimizer not provided")
+
+        if self.warmup is None or self.plateau is None or self.scaler is None:
+            raise SBITrainingException("Schedulers not provided")
+
 
         if self.epochs_no_improve == 0:
             save_checkpoint(
@@ -385,7 +431,7 @@ class SBITrainer:
     def _clone_state(model: nn.Module) -> dict[str, Any]:
         return {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
-    def _maybe_compile(self, model: nn.Module) -> nn.Module:
+    def _maybe_compile(self, model: nn.Module) -> Any:
         if not self.config.compile:
             return model
         try:
