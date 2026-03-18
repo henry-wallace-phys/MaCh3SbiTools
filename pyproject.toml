@@ -13,7 +13,7 @@ dependencies = [
     "ipykernel",
     "ipywidgets",
     "click",
-    "arrow",
+    "pyarrow",
     "scipy-stubs~=1.17.1",
     "arviz",
 ]
