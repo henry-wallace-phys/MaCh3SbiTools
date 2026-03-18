@@ -9,15 +9,16 @@ from torch.amp import GradScaler, autocast
 from torch.optim.lr_scheduler import LinearLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
+from mach3sbitools.exceptions import (
+    DensityEstimatorError,
+    OptimizerNotSpecified,
+    SBITrainingException,
+    ScalarNotSpecified,
+)
 from mach3sbitools.utils.config import TrainingConfig
 from mach3sbitools.utils.logger import create_progress, get_logger
 
 from .tensorboard_writer import TensorBoardWriter
-
-from mach3sbitools.exceptions import (OptimizerNotSpecified,
-                                      ScalarNotSpecified,
-                                      DensityEstimatorError,
-                                      SBITrainingException)
 
 logger = get_logger()
 
