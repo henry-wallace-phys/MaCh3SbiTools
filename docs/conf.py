@@ -26,6 +26,17 @@ suppress_warnings = [
 
 html_theme = "furo"
 
+html_theme_options = {
+    "sidebar_hide_name": False,
+}
+
+# Stop autodoc shortening things aggressively
+keep_warnings = False
+nitpicky = False
+
+# Ensure paragraphs render correctly in docstrings
+trim_docstring_whitespace = True  # removes leading whitespace uniformly
+
 # Napoleon — Sphinx-style docstrings
 napoleon_google_docstring = False
 napoleon_numpy_docstring = False
