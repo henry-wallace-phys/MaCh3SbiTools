@@ -3,6 +3,7 @@ from pathlib import Path
 import click
 import pandas as pd
 from pyarrow import parquet as pq
+from pymc import observe
 
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.simulator import Simulator, create_prior, get_simulator
@@ -325,7 +326,7 @@ def train(
 )
 @click.option("--n_samples", "-n", required=True, help="Number of samples")
 @click.option(
-    "--observed_data",
+    "--observed_data-file",
     "-o",
     type=click.Path(exists=True),
     help="Path to the observed data",
@@ -337,6 +338,7 @@ def inference(
     prior_path,
     save_dir,
     n_samples: int,
+    observed_data_file: Path,
     nuisance_pars,
     model: str,
     hidden: int,
@@ -359,7 +361,10 @@ def inference(
     inference_handler.load_posterior(posterior_path, posterior_config)
 
     parameter_names = inference_handler.prior.prior_data.parameter_names
-    samples = inference_handler.sample_posterior(n_samples).cpu()
+
+    observed_data = pq.read_table(observed_data_file)
+
+    samples = inference_handler.sample_posterior(n_samples, observed_data).cpu()
     # Write to dataframe
     data_table = pd.DataFrame({p: samples[:, i] for i, p in enumerate(parameter_names)})
     pq.write_table(data_table, save_dir)

@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import cast
 
 import torch
 import torch.nn as nn
+from torch.utils.data import TensorDataset
 from sbi.inference import NPE
 from sbi.neural_nets import posterior_nn
-from torch.utils.data import TensorDataset
 
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
 from mach3sbitools.simulator import load_prior
@@ -157,6 +158,10 @@ class InferenceHandler:
     def build_posterior(self) -> None:
         if self._density_estimator is None:
             raise ValueError("Train or load a density estimator first.")
+
+        if self.inference is None:
+            raise ValueError("Call create_posterior() before train_posterior().")
+
         self.posterior = self.inference.build_posterior(self._density_estimator)
 
     def sample_posterior(
@@ -168,10 +173,13 @@ class InferenceHandler:
         logger.info(f"Sampling [bold]{num_samples:,}[/] points from posterior")
         self.build_posterior()
 
+        if self.posterior is None:
+            raise ValueError("Train or load a density estimator first.")
+
         x_tensor = torch.tensor(
             [x], dtype=torch.float32, device=self.device_handler.device
         )
-        return self.posterior.sample((num_samples,), x=x_tensor, **kwargs)
+        return cast(torch.Tensor, self.posterior.sample((num_samples,), x=x_tensor, **kwargs))
 
     def load_posterior(
         self,
@@ -203,6 +211,9 @@ class InferenceHandler:
 
         theta_dim = self.prior.n_params
         x_dim = self.prior.event_shape[0]
+
+        if self.inference is None:
+            raise ValueError("Cannot find inference.")
 
         # Need to build a dummy first
         density_estimator = self.inference._build_neural_net(

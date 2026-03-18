@@ -15,7 +15,7 @@ import fnmatch
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 import numpy as np
 import torch
@@ -60,7 +60,7 @@ class Prior(torch.distributions.Distribution):
         self,
         prior_data: PriorData,
         flat_msk: list[bool] | None = None,
-        cyclical_parameters: list[float] | None = None,
+        cyclical_parameters: list[str] | None = None,
         nuisance_parameters: list[str] | None = None,
     ):
         """
@@ -156,7 +156,7 @@ class Prior(torch.distributions.Distribution):
     @property
     def mean(self) -> torch.Tensor:
         # Get the mean
-        return self.prior_data.nominals
+        return self.device_handler.to_tensor(self.prior_data.nominals)
 
     @property
     def n_params(self) -> int:
@@ -197,7 +197,7 @@ class Prior(torch.distributions.Distribution):
         in_bounds = (params >= self.prior_data.lower_bounds) & (
             params <= self.prior_data.upper_bounds
         )
-        return in_bounds.all(dim=-1)
+        return self.device_handler.to_tensor(in_bounds.all(dim=-1))
 
     def save(self, output_path: Path) -> None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -275,10 +275,10 @@ def create_prior(
     # Make everything a tensor
     nominals = dh.to_tensor(simulator_instance.get_parameter_nominals())
     errors = dh.to_tensor(simulator_instance.get_parameter_errors())
-    lower, upper = simulator_instance.get_parameter_bounds()
+    lower_arr, upper_arr = simulator_instance.get_parameter_bounds()
 
-    lower = dh.to_tensor(lower)
-    upper = dh.to_tensor(upper)
+    lower = dh.to_tensor(lower_arr)
+    upper = dh.to_tensor(upper_arr)
     names = np.array(simulator_instance.get_parameter_names(), dtype=str)
 
     _check_boundary(nominals, errors, lower, upper, names)

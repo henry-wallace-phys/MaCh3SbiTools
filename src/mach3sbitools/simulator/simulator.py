@@ -22,7 +22,7 @@ class Simulator:
         self,
         module_name: str,
         class_name: str,
-        config: Path | str,
+        config: Path,
         nuisance_pars: list[str] | None = None,
         cyclical_pars: list[str] | None = None,
     ):

@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeRemainingColumn, TaskID
 from rich.theme import Theme
 
 # Consistent theme across all console output
@@ -144,7 +144,7 @@ def create_progress(
     total_epochs: int = 1,
     description: str = "Training",
     console: Console = console,
-) -> tuple[Progress | nullcontext, int | None]:
+) -> tuple[Progress | nullcontext, TaskID | None]:
     """
     Returns a Progress object and optionally a pre-created epoch task.
     """

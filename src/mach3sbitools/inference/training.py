@@ -1,5 +1,6 @@
 import time
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -10,6 +11,8 @@ from mach3sbitools.utils.config import TrainingConfig
 from mach3sbitools.utils.logger import create_progress, get_logger
 
 from .tensorboard_writer import TensorBoardWriter
+
+from contextlib import nullcontext
 
 logger = get_logger()
 
@@ -111,7 +114,7 @@ class SBITrainer:
         logger.info(f"TensorBoard logging → [cyan]{tb_dir}[/]")
         logger.info(f"  Run: [bold]tensorboard --logdir {tb_dir}[/]")
 
-        return TensorBoardWriter(tb_dir, self.device_type)
+        return TensorBoardWriter(str(tb_dir), self.device_type)
 
     def _build_dataloaders(self, dataset: TensorDataset, config: TrainingConfig):
         n_val = int(len(dataset) * config.validation_fraction)
@@ -126,7 +129,7 @@ class SBITrainer:
         data_on_cpu = dataset.tensors[0].device.type == "cpu"
         workers = config.num_workers if data_on_cpu else 0
 
-        loader_kwargs = dict(
+        loader_kwargs: dict[str, Any]  = dict(
             num_workers=workers,
             pin_memory=data_on_cpu,
             persistent_workers=data_on_cpu and workers > 0,
@@ -176,7 +179,12 @@ class SBITrainer:
         scaler = GradScaler(device=self.device, enabled=self.use_amp)
 
         start_epoch, best_val_loss, epochs_no_improve = self._resume_if_requested(
-            density_estimator, optimizer, *schedulers, scaler, resume_checkpoint
+            model=density_estimator,
+            optimizer=optimizer,
+            warmup=schedulers[0],
+            plateau=schedulers[1],
+            scaler=scaler,
+            resume_checkpoint=resume_checkpoint
         )
 
         density_estimator.to(self.device)
@@ -253,8 +261,8 @@ class SBITrainer:
                     logger.warning(f"Early stopping at epoch {epoch}")
                     break
 
-                if epoch_task:
-                    progress.update(epoch_task, advance=1)
+                if epoch_task and not isinstance(progress, nullcontext):
+                    progress.update(task_id=epoch_task, advance=1)
 
         if best_state:
             density_estimator.load_state_dict(best_state)
@@ -373,6 +381,7 @@ class SBITrainer:
             optimizer,
             elapsed,
             epochs_no_improve,
+            len(self.train_loader)
         )
 
     def _maybe_save(

@@ -7,4 +7,4 @@ SimulatorData = NDArray[np.float32]
 SimulatorDataGrouped = tuple[SimulatorData, SimulatorData]
 
 # Boundary condition type
-BoundaryConditions = tuple[Sequence[float], Sequence[float]]
+BoundaryConditions = tuple[list[float], list[float]]

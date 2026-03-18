@@ -17,6 +17,7 @@ class TensorBoardWriter:
         optimizer: torch.optim.Optimizer,
         elapsed: float,
         epochs_no_improve: int,
+        total_samples: int,
     ) -> None:
         if self.writer is None:
             return
@@ -31,7 +32,7 @@ class TensorBoardWriter:
             self.writer.add_scalar(f"lr/group_{i}", pg["lr"], epoch)
 
         self.writer.add_scalar(
-            "throughput/samples_per_sec", len(self.train_dataset) / elapsed, epoch
+            "throughput/samples_per_sec", total_samples / elapsed, epoch
         )
         self.writer.add_scalar("throughput/epoch_seconds", elapsed, epoch)
 
@@ -68,9 +69,9 @@ class TensorBoardWriter:
                 "memory_utilization_pct": 0,
             }
 
-        allocated = torch.cuda.memory_allocated(self.device) / 1024**2
-        reserved = torch.cuda.memory_reserved(self.device) / 1024**2
-        max_reserved = torch.cuda.max_memory_reserved(self.device) / 1024**2
+        allocated = torch.cuda.memory_allocated(self.device_type) / 1024**2
+        reserved = torch.cuda.memory_reserved(self.device_type) / 1024**2
+        max_reserved = torch.cuda.max_memory_reserved(self.device_type) / 1024**2
         mem_util = (allocated / reserved * 100) if reserved > 0 else 0
 
         return {

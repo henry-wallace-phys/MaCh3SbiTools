@@ -1,11 +1,11 @@
 import importlib
 import inspect
 import pkgutil
-from collections.abc import Sequence
 from difflib import get_close_matches
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable, cast
+from collections.abc import Callable
 
 import numpy as np
 
@@ -54,7 +54,7 @@ class SimulatorProtocol(Protocol):
     def __init__(self, simulator_config: Path | str) -> None: ...
 
     # Get the simulation for a single input
-    def simulate(self, theta: Sequence[float]) -> Sequence[float]: ...
+    def simulate(self, theta: list[float]) -> list[float]: ...
 
     # Get the names for each theta
     def get_parameter_names(self) -> list[str]: ...
@@ -66,21 +66,20 @@ class SimulatorProtocol(Protocol):
     def get_is_flat(self, i: int) -> bool: ...
 
     # Get the data bins (xo)
-    def get_data_bins(self) -> Sequence[float]: ...
+    def get_data_bins(self) -> list[float]: ...
 
     # Get the nominal (mean) values
-    def get_parameter_nominals(self) -> Sequence[float]: ...
+    def get_parameter_nominals(self) -> list[float]: ...
 
     # Get the nominal (mean) values
-    def get_parameter_errors(self) -> Sequence[float]: ...
+    def get_parameter_errors(self) -> list[float]: ...
 
     # Get the covariance matrix
     def get_covariance_matrix(self) -> np.ndarray: ...
 
-
-# Thanks stack overflow
-# https://stackoverflow.com/questions/62922935/python-check-if-class-implements-unrelated-interface
-def _implements(proto: SimulatorProtocol):
+def _implements(proto: type)->Callable[[type], type]:
+    # Thanks stack overflow
+    # https://stackoverflow.com/questions/62922935/python-check-if-class-implements-unrelated-interface
     """Creates a decorator for classes that checks that the decorated class implements the runtime protocol `proto`"""
 
     def _deco(cls_def):
@@ -141,4 +140,4 @@ def get_simulator(module_name: str, class_name: str, config: Path) -> SimulatorP
         raise SimulatorSetupError(f"Config file not found: {config}")
 
     logger.info("Found simulator config '%s'", config)
-    return simulator_cls(str(config))
+    return cast(SimulatorProtocol, simulator_cls(str(config)))

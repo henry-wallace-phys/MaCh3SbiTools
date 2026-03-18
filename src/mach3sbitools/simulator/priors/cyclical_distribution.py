@@ -32,9 +32,9 @@ class CyclicalDistribution(torch.distributions.Distribution):
         return 0
 
     @property
-    def variance(self) -> float:
+    def variance(self) -> torch.Tensor:
         # Calculated from int(pdf*x2)dx using wolfram alpha
-        return 5.16947
+        return torch.Tensor(5.16947)
 
     def pdf(self, theta: torch.Tensor) -> torch.Tensor:
         in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)
@@ -87,9 +87,15 @@ class CyclicalDistribution(torch.distributions.Distribution):
         indices = torch.searchsorted(cdf_grid, u_flat).clamp(0, n_points - 1)
         return theta_grid[indices].reshape(u.shape)
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size | list[int] | tuple[int, ...] = torch.Size()) -> torch.Tensor:
         """Inverse transform sampling using a precomputed CDF lookup table."""
-        n_samples = sample_shape.numel() if sample_shape else 1
+        if not sample_shape:
+            n_samples=1
+        elif isinstance(sample_shape, torch.Size):
+            n_samples = sample_shape.numel()
+        else:
+            n_samples = len(sample_shape)
+
 
         theta_grid, cdf_grid = self._build_cdf_grid()
         u = self._sample_uniform_cdf(n_samples, cdf_min=cdf_grid[0], cdf_max=cdf_grid[-1])
