@@ -14,13 +14,18 @@ dependencies = [
     "ipywidgets",
     "click",
     "arrow",
-    "click",
     "scipy-stubs~=1.17.1",
     "arviz",
+]
+
+[project.optional-dependencies]
+dev = [
     "pytest",
     "pytest-cov",
-    "ruff"
+    "ruff",
+    "mypy",
 ]
+
 
 [project.scripts]
 mach3sbi = "mach3sbitools.apps.main_cli:cli"
@@ -45,3 +50,10 @@ select = [
 ignore = [
     "E501", # Don't enforce line lengths within a linting context
 ]
+allowed-confusables = ["σ"] # We need sigmas
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
