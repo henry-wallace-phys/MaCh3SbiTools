@@ -262,17 +262,13 @@ def create_prior(
     cyclical_pars: list[str] | None = None,
 ) -> Prior:
     """
-    Convenience function to create a prior from a MaCh3DUNEWrapper instance.
+    Convenience function to create a prior from a SimulatorProtocol instance.
 
-    Args:
-        simulator_instance: Instance of MaCh3DUNEWrapper
-        device: Device to place tensors on ('cpu', 'cuda', 'mps')
-        nuisance_pars: Optional list of parameter name patterns (fnmatch) to exclude
-        cyclical_pars: Optional list of parameter name patterns (fnmatch) that should
-            receive a cyclical sinusoidal prior.  Forwarded directly to MaCh3Prior.
-
-    Returns:
-        MaCh3Prior object compatible with SBI
+    :param simulator_instance: Instance of SimulatorProtocol (your import simulator)
+    :param nuisance_pars: Optional list of parameter name patterns (fnmatch) to exclude
+    :param cyclical_pars: Optional list of parameter name patterns (fnmatch) that should
+        receive a cyclical sinusoidal prior. Forwarded directly to Prior.
+    :return: MaCh3Prior object compatible with SBI
     """
     logger.info("Creating Prior")
     dh = TorchDeviceHandler()

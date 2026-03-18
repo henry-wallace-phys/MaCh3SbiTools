@@ -28,3 +28,11 @@ autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 autodoc_typehints_format = "short"
 add_module_names = False
+
+autodoc_default_options = {
+    "imported-members": False,
+}
+autodoc_type_aliases = {
+    "Style": "rich.style.Style",
+}
+
