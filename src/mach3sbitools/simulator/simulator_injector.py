@@ -12,7 +12,7 @@ import numpy as np
 from mach3sbitools.types import BoundaryConditions
 from mach3sbitools.utils.logger import get_logger
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 """
 A simulator injector. Simulators are expected to follow the SimulatorProtocol contract. Additionally they require
@@ -57,7 +57,7 @@ class SimulatorProtocol(Protocol):
     def simulate(self, theta: Sequence[float]) -> Sequence[float]: ...
 
     # Get the names for each theta
-    def get_parameter_names(self) -> Sequence[str]: ...
+    def get_parameter_names(self) -> list[str]: ...
 
     # Get the bounds as a [lower, upper]
     def get_parameter_bounds(self) -> BoundaryConditions: ...

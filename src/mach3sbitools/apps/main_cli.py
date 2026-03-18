@@ -270,7 +270,7 @@ def train(
     show_epoch_progress: bool,
     compile_model: bool,
 ):
-    logger = get_logger(__name__)
+    logger = get_logger()
     if compile_model:
         logger.warning(
             "Request model compilation. In testing this has been shown to be slower"

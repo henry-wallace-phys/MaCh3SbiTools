@@ -5,19 +5,18 @@ from pathlib import Path
 @dataclass
 class TrainingConfig:
     """Configuration for training the posterior density estimator."""
-
     save_path: Path | None = None
     batch_size: int = 2048
     learning_rate: float = 5e-4
     max_epochs: int = 500
     stop_after_epochs: int = 100
     validation_fraction: float = 0.1
-    num_workers: int = 4
+    num_workers: int = 1
     autosave_every: int = 10
     resume_checkpoint: Path | None = None
     use_amp: bool = True
     print_interval: int = 10
-    show_progress_bar: bool = False
+    show_progress_bar: bool = True
     tensorboard_dir: Path | None = None
     scheduler_patience: int = 100
     show_epoch_progress: bool = True

@@ -1,133 +1,97 @@
-from torch import (
-    Size,
-    Tensor,
-    distributions,
-    full_like,
-    log,
-    no_grad,
-    ones_like,
-    pi,
-    rand,
-    sin,
-    tensor,
-    where,
-)
+import torch
+import torch.distributions
+import numpy as np
 
-
-class CyclicalDistribution(distributions.Distribution):
-    def __init__(self, nominals: Tensor, lower_bounds: Tensor, upper_bounds: Tensor):
+class CyclicalDistribution(torch.distributions.Distribution):
+    def __init__(self, nominals: torch.Tensor, lower_bounds: torch.Tensor, upper_bounds: torch.Tensor):
         """
         Technically the constructor is a bit pointlesss... but it's here
         in case I decide to go to bounds that aren't ±2pi
         """
 
         self.nominals = nominals
-
         self.device = nominals.device
 
         self.lower_bounds = lower_bounds
         self.upper_bounds = upper_bounds
 
-        if any(upper_bounds != 2 * pi) or any(lower_bounds != -2 * pi):
+        if any(upper_bounds != 2 * torch.pi) or any(lower_bounds != -2 * torch.pi):
             raise NotImplementedError(
                 "Cyclical prior not implemented for bounds that aren't [-2pi, 2pi]"
             )
 
         super().__init__(
-            batch_shape=Size(),
-            event_shape=Size([len(nominals)]),
+            batch_shape=torch.Size(),
+            event_shape=torch.Size([len(nominals)]),
             validate_args=False,
         )
 
-    @staticmethod
-    def _cdf(theta: Tensor) -> Tensor:
-        """
-        Analytical CDF of the cyclical prior.
-
-        Derivation
-        ----------
-        Let  u = (θ + 2π) / 4,  so dθ = 4 du.
-        At the lower limit θ = -2π:  u_lo = 0.
-
-            ∫ ½ sin²(u) · 4 du  =  2 [ u/2 - sin(2u)/4 ]  =  u - sin(2u)/2
-
-        The primitive at u_lo = 0 is zero, so:
-
-            CDF(θ) = [ u - sin(2u)/2 ] / π
-
-        where dividing by π (the total integral) normalises to [0, 1].
-        """
-        u = (theta + 2.0 * pi) / 4.0
-        return (u - sin(2.0 * u) / 2.0) / pi
-
-    @staticmethod
-    def _inv_cdf(p: Tensor, n_iter: int = 60) -> Tensor:
-        """
-        Invert the CDF via vectorised bisection.
-
-        60 iterations give absolute accuracy < 4π / 2^60 ≈ 1 x 10⁻¹⁷.
-        """
-        lo = full_like(p, -2.0 * pi)
-        hi = full_like(p, 2.0 * pi)
-
-        for _ in range(n_iter):
-            mid = (lo + hi) * 0.5
-            go_right = CyclicalDistribution._cdf(mid) < p
-            lo = where(go_right, mid, lo)
-            hi = where(go_right, hi, mid)
-
-        return (lo + hi) * 0.5
+    @property
+    def mean(self):
+        return 0
 
     @property
-    def variance(self) -> Tensor:
-        """
-        Variance computed analytically:
+    def variance(self) -> float:
+        # Calculated from int(pdf*x2)dx using wolfram alpha
+        return 5.16947
 
-            ∫_{-2π}^{2π} θ² · p(θ) dθ  =  4π² - 8  ≈  31.48
-        """
-        return tensor(4.0 * pi**2 - 8.0, device=self.device)
+    def pdf(self, theta: torch.Tensor) -> torch.Tensor:
+        in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)
+        pdf = torch.zeros(theta.shape, dtype=torch.double)
 
-    def sample(self, sample_shape=Size([])) -> Tensor:
-        """Draw samples via exact inverse-CDF (no rejection needed)."""
-        if not isinstance(sample_shape, Size):
-            sample_shape = Size(
-                [sample_shape] if isinstance(sample_shape, int) else sample_shape
-            )
-        with no_grad():
-            u = rand(sample_shape, device=self.device)
-            return self._inv_cdf(u)
+        pdf[in_bounds] = (0.5 / torch.pi) * (torch.sin((theta[in_bounds] + 2 * torch.pi) / 4) ** 2)
 
-    def rsample(self, sample_shape=Size([])) -> Tensor:
-        """
-        Reparameterised sample.
+        return pdf
 
-        The inverse-CDF transform is differentiable everywhere inside the
-        open support, so gradients flow through correctly.
-        """
-        if not isinstance(sample_shape, Size):
-            sample_shape = Size(
-                [sample_shape] if isinstance(sample_shape, int) else sample_shape
-            )
-        u = rand(sample_shape, device=self.device)
-        return self._inv_cdf(u)
+    def cdf(self, theta: torch.Tensor) -> torch.Tensor:
+        cdf = torch.zeros(theta.shape, dtype=torch.double)
 
-    def log_prob(self, value: Tensor) -> Tensor:
-        """
-        Log probability under the cyclical prior.
+        in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)
+        cdf[in_bounds] = (0.5 / torch.pi) * (theta[in_bounds] / 2 + torch.sin(theta[in_bounds] / 2) + torch.pi)
+        cdf[theta > self.upper_bounds] = 1.0
+        return cdf
 
-            log p(θ) = -log(2π) + 2 · log|sin((θ + 2π)/4)|
+    def log_prob(self, value: torch.Tensor) -> torch.Tensor:
+        pdf = self.pdf(value)
+        in_bounds = torch.abs(pdf)>1e-8
 
-        Returns -inf for θ outside (-2π, 2π) and at the endpoints where
-        the density is zero.
-        """
-        if value.device.type != self.device:
-            value = value.to(self.device)
+        pdf[in_bounds] = torch.log(pdf[in_bounds])
+        pdf[~in_bounds] = -np.inf
 
-        in_bounds = (value > self.lower_bounds) & (value < self.upper_bounds)
+        return pdf
 
-        sin_val = sin((value + 2.0 * pi) / 4.0)
-        # Substitute 1.0 outside bounds to avoid log(0) before the final mask
-        safe_sin = where(in_bounds, sin_val.abs(), ones_like(sin_val))
+    def _build_cdf_grid(self, n_points: int = 10_000) -> tuple[torch.Tensor, torch.Tensor]:
+        """Precompute a lookup table of (theta, CDF(theta)) over the valid range."""
+        theta_grid = torch.linspace(
+            -2 * torch.pi, 2 * torch.pi, n_points,
+            dtype=torch.double, device=self.device
+        )
+        cdf_grid = self.cdf(theta_grid)
+        return theta_grid, cdf_grid
 
-        log_p = -log(2.0 * pi) + 2.0 * log(safe_sin)
-        return where(in_bounds, log_p, tensor(float("-inf"), device=self.device))
+    def _sample_uniform_cdf(
+        self, n_samples: int, cdf_min: torch.Tensor, cdf_max: torch.Tensor
+    ) -> torch.Tensor:
+        """Sample u ~ Uniform(cdf_min, cdf_max), shaped (n_samples, event_size)."""
+        event_size = len(self.nominals)
+        u = torch.rand(n_samples, event_size, dtype=torch.double, device=self.device)
+        return u * (cdf_max - cdf_min) + cdf_min
+
+    def _invert_cdf(
+        self, u: torch.Tensor, theta_grid: torch.Tensor, cdf_grid: torch.Tensor
+    ) -> torch.Tensor:
+        """Map uniform CDF samples back to theta via searchsorted on the lookup table."""
+        n_points = len(theta_grid)
+        u_flat = u.reshape(-1)
+        indices = torch.searchsorted(cdf_grid, u_flat).clamp(0, n_points - 1)
+        return theta_grid[indices].reshape(u.shape)
+
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+        """Inverse transform sampling using a precomputed CDF lookup table."""
+        n_samples = sample_shape.numel() if sample_shape else 1
+
+        theta_grid, cdf_grid = self._build_cdf_grid()
+        u = self._sample_uniform_cdf(n_samples, cdf_min=cdf_grid[0], cdf_max=cdf_grid[-1])
+        samples = self._invert_cdf(u, theta_grid, cdf_grid)
+
+        return samples.squeeze(0) if not sample_shape else samples

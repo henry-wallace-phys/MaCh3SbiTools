@@ -1,18 +1,16 @@
-from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
-import pyarrow as pa
-import pyarrow.feather as feather
 from pyarrow import parquet as pq
 from tqdm import tqdm
 
-from mach3sbitools.utils import get_logger
+from mach3sbitools.types import SimulatorData
+from mach3sbitools.utils import get_logger, to_feather
 
 from .priors import Prior, create_prior
 from .simulator_injector import SimulatorProtocol, get_simulator
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class Simulator:
@@ -38,37 +36,36 @@ class Simulator:
             cyclical_pars=cyclical_pars,
         )
 
-    def simulate(self, n_samples: int) -> tuple[Iterable, Iterable]:
-        """
-        Samples data from the specified simulator using the provided configuration and parameters.
-        Args:
-            :n_samples (int): Number of samples to generate.
-
-        :returns: Tuple of (theta, x)
-        """
-
+    def simulate(self, n_samples: int) -> tuple[SimulatorData, SimulatorData]:
+        # Generate UP TO n_samples simulations. Some values may cause errors which will be skipped
         samples = self.prior.sample((n_samples,))
         theta = samples.cpu().numpy()
 
-        valid_theta = []
-        valid_x = []
-        for t in tqdm(theta, desc="Simulating"):
+        valid_theta = np.empty_like(theta)
+        valid_x = None
+        count = 0 # Keep track of good simulations
+
+        for i, t in enumerate(tqdm(theta, desc="Simulating")):
             try:
                 x = self.simulator_wrapper.simulate(t)
-                valid_theta.append(t)
-                valid_x.append(np.random.poisson(x))
+                x_sample = np.random.poisson(x)
 
-            # If anything raises an exception we continue and skip the error
+                if valid_x is None:
+                    valid_x = np.empty((n_samples, *x_sample.shape),
+                                       dtype=x_sample.dtype)
+                valid_theta[count] = t
+                valid_x[count] = x_sample
+                count += 1
             except Exception:
                 logger.warning("Error: Bad simulation! Skipping sample.")
 
-        return valid_theta, valid_x
+        return valid_theta[:count], valid_x[:count] if valid_x is not None else np.array([])
 
     def save(
         self,
         file_path: Path,
-        theta: Iterable,
-        x: Iterable,
+        theta: SimulatorData,
+        x: SimulatorData,
         prior_path: Path | None = None,
     ) -> None:
         """
@@ -81,15 +78,8 @@ class Simulator:
 
             prior_path (Path, Optional): Where to save the prior data.
         """
-        table = pa.Table.from_pydict(
-            {
-                "theta": theta,
-                "x": x,
-                "parameter_names": self.simulator_wrapper.get_parameter_names(),
-            }
-        )
-        feather.write_feather(table, str(file_path))
-
+        # Save the simulations to a feather file
+        to_feather(file_path, theta, x)
         # We can also save our prior
         if prior_path is not None:
             prior_path.parent.mkdir(parents=True, exist_ok=True)

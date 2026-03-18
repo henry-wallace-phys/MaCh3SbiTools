@@ -1,14 +1,17 @@
-from pathlib import Path
-import pytest
-from importlib.util import find_spec
-from difflib import get_close_matches
 import pkgutil
 
-from mach3sbitools.simulator.simulator_injector import (SimulatorProtocol,
-                                                        get_simulator,
-                                                        SimulatorImplementationError,
-                                                        SimulatorImportError,
-                                                        _hint)
+import pytest
+
+from mach3sbitools.simulator.simulator_injector import (
+    SimulatorImplementationError,
+    SimulatorImportError,
+    SimulatorProtocol,
+    _hint,
+    get_simulator,
+)
+from mach3sbitools.utils import get_logger
+
+logger = get_logger()
 
 # Tests the injector
 def test_import(simulator_module, simulator_class, dummy_config):
@@ -23,6 +26,7 @@ def test_relative_import(simulator_module, simulator_class, dummy_config):
                             simulator_class,
                             dummy_config)
     assert isinstance(simulator, SimulatorProtocol)
+
 
 def test_protocol_followed(simulator_module, dummy_config):
     # Checks a pre-built class that doesn't follow protocol

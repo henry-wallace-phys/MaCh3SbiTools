@@ -12,7 +12,7 @@ Checks are done in the following order
 """
 
 import fnmatch
-import logging
+import pickle
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
@@ -33,7 +33,7 @@ size_: TypeAlias = torch.Size | list[int] | tuple[int, ...]
 class PriorNotFound(Exception): ...
 
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 @dataclass(frozen=True)
@@ -141,16 +141,15 @@ class Prior(torch.distributions.Distribution):
     def prior_data(self):
         return self._prior_data[self.nuisance_filter]
 
-    def set_nuisance_filter(self, nuisance_patterns: list[str] | None) -> None:
+    def set_nuisance_filter(self, nuisance_patterns: list[str] | None = None) -> None:
         if nuisance_patterns is None:
-            # Bit hacky, can't use the n_params property because of the filter
             n_pars = len(self._prior_data.parameter_names)
             self.nuisance_filter = torch.ones(n_pars, dtype=torch.bool)
             return
 
         nuisance_filter_ = [
-            any(fnmatch.fnmatch(p, n) for p in self._prior_data.parameter_names)
-            for n in nuisance_patterns
+            not any(fnmatch.fnmatch(p, n) for n in nuisance_patterns)
+            for p in self._prior_data.parameter_names  # ← iterate params, not patterns
         ]
         self.nuisance_filter = self.device_handler.to_tensor(nuisance_filter_)
 
@@ -181,15 +180,17 @@ class Prior(torch.distributions.Distribution):
         )
 
     def sample(self, sample_shape=torch.Size([])):
-        samples = torch.empty(sample_shape)
+        sample_shape = torch.Size(sample_shape)  # ← normalize tuple → torch.Size
+        samples = torch.empty(*sample_shape, self.n_params, dtype=torch.double)
         for mask_map in self._priors:
-            samples[mask_map.mask] = mask_map.distribution.sample()
+            samples[..., mask_map.mask] = mask_map.distribution.sample(sample_shape).to(torch.double)
         return samples
 
     def rsample(self, sample_shape=torch.Size([])):
-        samples = torch.empty(sample_shape)
+        sample_shape = torch.Size(sample_shape)
+        samples = torch.empty(*sample_shape, self.n_params, dtype=torch.double)
         for mask_map in self._priors:
-            samples[mask_map.mask] = mask_map.distribution.rsample()
+            samples[..., mask_map.mask] = mask_map.distribution.rsample(sample_shape).to(torch.double)
         return samples
 
     def check_bounds(self, params: torch.Tensor) -> torch.Tensor:
@@ -199,7 +200,9 @@ class Prior(torch.distributions.Distribution):
         return in_bounds.all(dim=-1)
 
     def save(self, output_path: Path) -> None:
-        torch.save(self, output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("wb") as f:
+            pickle.dump(self, f)
 
     # Does to in place
     def to(self, device: torch.device) -> "Prior":
@@ -227,11 +230,11 @@ def _check_boundary(
     warning_lb = nominal - error * warning_thresh
 
     mask = (lower_bound < warning_lb) | (upper_bound > warning_ub)
+    if not any(mask):
+        return
 
     logger.warning(
-        "The following parameters have boundaries > {:d}σ from their prior nominal".format(
-            warning_thresh
-        )
+        f"The following parameters have boundaries > {warning_thresh:d}σ from their prior nominal"
     )
     parameter_names_masked = parameter_names[mask.cpu().numpy()]
     nominals_masked = nominal[mask]
@@ -247,7 +250,6 @@ def _check_boundary(
                 *param_info
             )
         )
-
 
 def create_prior(
     simulator_instance: SimulatorProtocol,
@@ -308,8 +310,10 @@ def load_prior(prior_path: Path, device=torch.device("cpu")) -> Prior:
     if not prior_path.is_file() or not prior_path.exists():
         raise PriorNotFound("Could not find prior %s", prior_path)
 
-    prior = torch.load(prior_path)
+    with prior_path.open("rb") as f:
+        prior = pickle.load(f)
+
     if not isinstance(prior, Prior):
-        raise PriorNotFound("No valid prior in %s", prior_path)
+        raise PriorNotFound("No valid prior in %s. Instead found %s", prior_path, type(prior))
 
     return prior.to(device)

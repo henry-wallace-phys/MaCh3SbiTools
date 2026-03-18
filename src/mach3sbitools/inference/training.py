@@ -11,7 +11,7 @@ from mach3sbitools.utils.logger import create_progress, get_logger
 
 from .tensorboard_writer import TensorBoardWriter
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 # ──────────────────────────────
@@ -82,7 +82,7 @@ def save_checkpoint(
     )
 
     torch.save(ckpt, ckpt_path)
-    logger.info(f"Autosaved checkpoint → [cyan]{ckpt_path}[/]")
+    logger.debug(f"Autosaved checkpoint → [cyan]{ckpt_path}[/]")
 
 
 # ──────────────────────────────

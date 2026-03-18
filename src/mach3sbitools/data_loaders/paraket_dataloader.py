@@ -1,42 +1,27 @@
-import fnmatch
 from pathlib import Path
 
-import numpy as np
 import torch
-from pyarrow import feather
 from torch.utils.data import Dataset, TensorDataset
 from tqdm import tqdm
+
+from mach3sbitools.utils import from_feather
 
 
 class ParaketDataset(Dataset):
     """File-level dataset — one __getitem__ = one feather file.
     Use .to_tensor_dataset() before training."""
 
-    def __init__(self, data_folder: Path, nuisance_params: list[str] | None = None):
+    def __init__(self, data_folder: Path, parameter_names: list[str], nuisance_params: list[str] | None = None):
         self.data_folder = data_folder
         self.files = sorted(data_folder.glob("*.feather"))
-        self.nuisance_params = nuisance_params or []
+        self.nuisance_params = nuisance_params or None
+        self.parameter_names = parameter_names
 
     def __len__(self):
         return len(self.files)
 
-    def __getitem__(self, idx):
-        table = feather.read_feather(str(self.files[idx]))
-        theta = np.array(table["theta"].to_list(), dtype=np.float32)
-
-        # Filter nuisance
-        if self.nuisance_params is not None:
-            param_names = np.array(table["parameter_names"].to_list(), dtype=str)
-            param_filter = np.array(
-                [
-                    any(fnmatch.fnmatch(param, nuis) for nuis in self.nuisance_params)
-                    for param in param_names
-                ],
-                dtype=bool,
-            )
-            theta = theta[:, param_filter].copy()
-
-        x = np.array(table["x"].to_list(), dtype=np.float32)
+    def __getitem__(self, idx)->tuple[torch.Tensor, torch.Tensor]:
+        theta, x = from_feather(self.files[idx], self.parameter_names, self.nuisance_params)
         return torch.from_numpy(theta), torch.from_numpy(x)
 
     def to_tensor_dataset(

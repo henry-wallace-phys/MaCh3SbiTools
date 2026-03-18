@@ -14,7 +14,7 @@ from mach3sbitools.utils.logger import get_logger
 
 from .training import SBITrainer
 
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class InferenceHandler:
@@ -31,6 +31,8 @@ class InferenceHandler:
         self.nuisance_pars = nuisance_pars
 
         self.prior = load_prior(prior_path)
+        # Might as well grab this from the prior
+        self.parameter_names = self.prior.prior_data.parameter_names
 
         if nuisance_pars is not None:
             self.prior.set_nuisance_filter(nuisance_pars)
@@ -47,7 +49,7 @@ class InferenceHandler:
 
     def set_dataset(self, data_folder: Path) -> None:
         """Point the interface at a folder of feather files."""
-        self.dataset = ParaketDataset(data_folder, self.nuisance_pars)
+        self.dataset = ParaketDataset(data_folder, self.parameter_names, self.nuisance_pars)
         logger.info(
             f"Dataset set: [bold]{len(self.dataset)}[/] files in [cyan]{data_folder}[/]"
         )
@@ -134,8 +136,8 @@ class InferenceHandler:
 
         # Build the raw density estimator network from sbi,
         # using a small sample to infer theta/x dimensions.
-        sample_theta = self._tensor_dataset.tensors[0][:100]
-        sample_x = self._tensor_dataset.tensors[1][:100]
+        sample_theta = self._tensor_dataset.tensors[0][:10]
+        sample_x = self._tensor_dataset.tensors[1][:10]
         density_estimator = self.inference._build_neural_net(sample_theta, sample_x)
 
         trainer = SBITrainer(
@@ -189,7 +191,7 @@ class InferenceHandler:
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
         if isinstance(ckpt, dict) and "model_state" in ckpt:
             state_dict = ckpt["model_state"]
             logger.info(f"Loading autosave checkpoint from epoch {ckpt['epoch']}")
@@ -199,8 +201,8 @@ class InferenceHandler:
 
         self.create_posterior(config)
 
-        x_dim = self.prior.n_params
-        theta_dim = self.prior.event_shape[0]
+        theta_dim = self.prior.n_params
+        x_dim = self.prior.event_shape[0]
 
         # Need to build a dummy first
         density_estimator = self.inference._build_neural_net(

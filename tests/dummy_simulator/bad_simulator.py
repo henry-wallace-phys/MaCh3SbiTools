@@ -1,7 +1,7 @@
-from typing import Sequence
+from collections.abc import Sequence
+
 import numpy as np
-from pathlib import Path
-from mach3sbitools.types import NominalError, BoundaryConditions
+
 
 class PoorlyDefinedSimulator:
     def __init__(self, config: str) -> None:
@@ -24,7 +24,7 @@ class PoorlyDefinedSimulator:
     def get_bounds(self) -> int:
         return 0
 
-    def get_nominals(self)->NominalError:
+    def get_nominals(self):
         return np.ones(self.n_params), np.ones(self.n_params)
 
     def get_corelation_matrix(self)->np.ndarray:
