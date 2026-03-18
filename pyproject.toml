@@ -17,7 +17,7 @@ dependencies = [
     "click",
     "scipy-stubs~=1.17.1",
     "arviz",
-    "pytest,"
+    "pytest",
     "pytest-cov",
 ]
 
