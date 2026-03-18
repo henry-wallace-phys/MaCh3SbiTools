@@ -28,7 +28,7 @@ jobs:
           python -m pip install .
 
       - name: Lint code with Ruff
-        run: ruff check --output-format=github --target-version=py39
+        run: ruff check --output-format=github
+
       - name: Check code formatting with Ruff
-        run: ruff format --diff --target-version=py39
-        continue-on-error: true
+        run: ruff format --diff
