@@ -15,6 +15,13 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
 ]
+# Suppress warnings from third-party packages
+suppress_warnings = [
+    "ref.ref",       # undefined labels in torch/rich docstrings
+    "ref.doc",
+    "docutils",
+]
+
 
 html_theme = "furo"
 
@@ -36,3 +43,12 @@ autodoc_type_aliases = {
     "Style": "rich.style.Style",
 }
 
+def autodoc_skip_member(app, what, name, obj, skip, options):
+    """Skip members not defined in mach3sbitools."""
+    module = getattr(obj, "__module__", "") or ""
+    if module and not module.startswith("mach3sbitools"):
+        return True
+    return skip
+
+def setup(app):
+    app.connect("autodoc-skip-member", autodoc_skip_member)
