@@ -1,7 +1,6 @@
 import os
 import sys
 from importlib.metadata import version as get_version
-import solar_theme
 
 sys.path.insert(0, os.path.abspath("../src"))
 sys.path.insert(0, os.path.abspath("../tests"))
@@ -27,8 +26,7 @@ suppress_warnings = [
 
 sphinx_click_mock_imports = ["mach3sbitools", "pyarrow", "pandas"]
 
-html_theme = 'solar_theme'
-html_theme_path = [solar_theme.theme_path]
+html_theme = "furo"
 
 html_theme_options = {
     "sidebar_hide_name": False,
