@@ -1,3 +1,17 @@
+"""
+High-level inference interface.
+
+Combines data loading, NPE model construction, training, and posterior
+sampling into a single object. The typical workflow is::
+
+    handler = InferenceHandler(prior_path)
+    handler.set_dataset(data_folder)
+    handler.load_training_data()
+    handler.create_posterior(posterior_config)
+    handler.train_posterior(training_config)
+    samples = handler.sample_posterior(10_000, x_observed)
+"""
+
 from pathlib import Path
 from typing import cast
 
@@ -20,8 +34,11 @@ logger = get_logger()
 
 class InferenceHandler:
     """
-    High-level interface combining simulation, data loading,
-    and NPE training with a custom high-performance training loop.
+    High-level interface for NPE training and posterior sampling.
+
+    Manages the full inference pipeline: loading simulations from disk,
+    building and training an NPE density estimator, and drawing posterior
+    samples conditioned on observed data.
     """
 
     def __init__(
@@ -30,39 +47,38 @@ class InferenceHandler:
         nuisance_pars: list[str] | None = None,
     ):
         """
-        The main interface with inference and training within MaCh3SBITools.
+        Initialise the handler and load the prior.
 
-        :param prior_path: Path to folder containing your priors
-        :param nuisance_pars: Nuisance parameters to filter by
+        :param prior_path: Path to a pickled :class:`~mach3sbitools.simulator.Prior`
+            file produced by :func:`~mach3sbitools.simulator.create_prior`.
+        :param nuisance_pars: fnmatch patterns for parameters to exclude.
+            Passed directly to :meth:`~mach3sbitools.simulator.Prior.set_nuisance_filter`.
         """
-
         self.prior = load_prior(prior_path)
-        # Might as well grab this from the prior
         self.parameter_names = self.prior.prior_data.parameter_names
-
         self.nuisance_pars = nuisance_pars
+
         if nuisance_pars is not None:
             self.prior.set_nuisance_filter(nuisance_pars)
 
         self.dataset: ParaketDataset | None = None
         self.inference: NPE | None = None
         self.posterior = None
-
         self._density_estimator: nn.Module | None = None
         self._tensor_dataset: TensorDataset | None = None
         self.device_handler = TorchDeviceHandler()
 
-    # ── Data ─────────────────────────────────────────────────────────────────
+    # ── Data ──────────────────────────────────────────────────────────────────
 
     def set_dataset(self, data_folder: Path) -> None:
         """
-        Set the dataset to use.
-        :param data_folder: Folder containing data
-        :return:
-        """
+        Point the handler at a folder of ``.feather`` simulation files.
 
+        :param data_folder: Directory containing ``.feather`` files produced
+            by :meth:`~mach3sbitools.simulator.Simulator.save`.
+        """
         self.dataset = ParaketDataset(
-            data_folder, self.parameter_names, self.nuisance_pars
+            data_folder, self.parameter_names.tolist(), self.nuisance_pars
         )
         logger.info(
             f"Dataset set: [bold]{len(self.dataset)}[/] files in [cyan]{data_folder}[/]"
@@ -70,32 +86,26 @@ class InferenceHandler:
 
     def load_training_data(self) -> None:
         """
-        Pre-load all feather files into RAM as a flat TensorDataset.
-        Call once before training — avoids repeated disk reads per epoch.
-        Data is kept on CPU; pinned-memory DataLoader handles GPU transfers.
+        Pre-load all feather files into RAM as a flat :class:`~torch.utils.data.TensorDataset`.
 
-        :return:
-        :raises ValueError: The dataset has not been set
+        Call once before :meth:`train_posterior`. Keeps data on CPU; the
+        DataLoader handles GPU transfers via pinned memory.
 
+        :raises ValueError: If :meth:`set_dataset` has not been called.
         """
         if self.dataset is None:
             raise ValueError("Call set_dataset() before load_training_data().")
 
-        # Build nuisance mask if needed
-        self._tensor_dataset = self.dataset.to_tensor_dataset(
-            device="cpu",
-        )
+        self._tensor_dataset = self.dataset.to_tensor_dataset(device="cpu")
 
     # ── Model ─────────────────────────────────────────────────────────────────
 
-    def create_posterior(
-        self,
-        config: PosteriorConfig,
-    ) -> None:
+    def create_posterior(self, config: PosteriorConfig) -> None:
         """
-        Build the NPE inference object and density estimator.
+        Build the NPE inference object and density estimator network.
 
-        :param config:    PosteriorConfig object containing all training parameters.
+        :param config: Architecture and hyperparameter settings.
+            See :class:`~mach3sbitools.utils.PosteriorConfig`.
         """
         neural_net = posterior_nn(
             model=config.model,
@@ -105,13 +115,11 @@ class InferenceHandler:
             num_blocks=config.num_blocks,
             num_bins=config.num_bins,
         )
-
         self.inference = NPE(
             prior=self.prior,
             density_estimator=neural_net,
             device=self.device_handler.device,
         )
-
         logger.info(
             f"NPE created | {config.model} | "
             f"hidden=[cyan]{config.hidden_features}[/] transforms=[cyan]{config.num_transforms}[/] "
@@ -120,21 +128,18 @@ class InferenceHandler:
 
     # ── Training ──────────────────────────────────────────────────────────────
 
-    def train_posterior(
-        self,
-        config: TrainingConfig,
-    ) -> None:
+    def train_posterior(self, config: TrainingConfig) -> None:
         """
-        Train the posterior density estimator using the custom training loop.
-        :param config:    TrainingConfig object containing all training parameters.
+        Train the density estimator using the custom :class:`~mach3sbitools.inference.SBITrainer`.
 
-        :raises ValueError: There is no data loaded.
-        :raises ValueError: The training loop has not been set yet.
+        :param config: Training loop settings.
+            See :class:`~mach3sbitools.utils.TrainingConfig`.
+        :raises ValueError: If :meth:`load_training_data` or
+            :meth:`create_posterior` has not been called.
         """
         if self._tensor_dataset is None:
             raise ValueError("Call load_training_data() before train_posterior().")
 
-        # If resuming without a live inference object, we need to reconstruct it.
         if config.resume_checkpoint is not None and self.inference is None:
             raise ValueError(
                 "Call create_posterior() before train_posterior() so the network "
@@ -144,8 +149,6 @@ class InferenceHandler:
         if self.inference is None:
             raise ValueError("Call create_posterior() before train_posterior().")
 
-        # Build the raw density estimator network from sbi,
-        # using a small sample to infer theta/x dimensions.
         sample_theta = self._tensor_dataset.tensors[0][:10]
         sample_x = self._tensor_dataset.tensors[1][:10]
         density_estimator = self.inference._build_neural_net(sample_theta, sample_x)
@@ -155,7 +158,6 @@ class InferenceHandler:
             config=config,
             device=self.device_handler.device,
         )
-
         self._density_estimator = trainer.train(
             density_estimator,
             resume_checkpoint=config.resume_checkpoint,
@@ -165,14 +167,16 @@ class InferenceHandler:
 
     def build_posterior(self) -> None:
         """
-        Build the posterior density estimator using the custom training loop.
-        :return:
+        Wrap the trained density estimator in an ``sbi`` posterior object.
+
+        Called automatically by :meth:`sample_posterior`.
+
+        :raises ValueError: If no density estimator has been trained or loaded.
         """
         if self._density_estimator is None:
             raise ValueError("Train or load a density estimator first.")
-
         if self.inference is None:
-            raise ValueError("Call create_posterior() before train_posterior().")
+            raise ValueError("Call create_posterior() before build_posterior().")
 
         self.posterior = self.inference.build_posterior(self._density_estimator)
 
@@ -183,12 +187,14 @@ class InferenceHandler:
         **kwargs,
     ) -> torch.Tensor:
         """
-        Sample from the posterior density estimator.
+        Draw samples from the posterior conditioned on *x*.
 
-        :param num_samples: Number of samples to draw
-        :param x: Data point to sample from
-        :param kwargs: Kwargs for sbi.posterior.sample
-        :return:
+        :param num_samples: Number of posterior samples to draw.
+        :param x: Observed data vector *x_o*.
+        :param kwargs: Additional keyword arguments forwarded to
+            ``sbi.posterior.sample``.
+        :returns: Tensor of shape ``(num_samples, n_params)``.
+        :raises ValueError: If no density estimator is available.
         """
         logger.info(f"Sampling [bold]{num_samples:,}[/] points from posterior")
         self.build_posterior()
@@ -209,12 +215,19 @@ class InferenceHandler:
         config: PosteriorConfig,
     ) -> None:
         """
-        Load a trained density estimator directly into the interface,
-        ready for sample_posterior(). Dimensions are inferred from the
-        simulator's prior and data bins.
+        Load a trained density estimator from a checkpoint file.
 
-        :param checkpoint_path: Path to checkpoint file
-        :param config: PosteriorConfig object containing all posterior parameters
+        Supports both best-model state dicts (plain ``state_dict``) and
+        autosave checkpoints (dicts with a ``"model_state"`` key).
+
+        Parameter and observable dimensions are inferred from the prior.
+
+        :param checkpoint_path: Path to a ``.pt`` checkpoint file.
+        :param config: Architecture config — **must match** the settings used
+            during training.
+        :raises FileNotFoundError: If *checkpoint_path* does not exist.
+        :raises ValueError: If the inference object is unavailable after
+            :meth:`create_posterior`.
         """
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
@@ -236,12 +249,10 @@ class InferenceHandler:
         if self.inference is None:
             raise ValueError("Cannot find inference.")
 
-        # Need to build a dummy first
         density_estimator = self.inference._build_neural_net(
             torch.zeros(2, theta_dim),
             torch.zeros(2, x_dim),
         )
-
         density_estimator.load_state_dict(state_dict)
         density_estimator.to(self.device_handler.device).eval()
         self._density_estimator = density_estimator

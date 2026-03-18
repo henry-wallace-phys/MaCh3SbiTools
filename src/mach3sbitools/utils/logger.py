@@ -1,3 +1,7 @@
+"""
+Rich-backed logging utilities for mach3sbitools.
+"""
+
 import logging
 from contextlib import nullcontext
 from pathlib import Path
@@ -14,7 +18,6 @@ from rich.progress import (
 )
 from rich.theme import Theme
 
-# Consistent theme across all console output
 _THEME = Theme(
     {
         "logging.level.debug": "dim cyan",
@@ -27,7 +30,8 @@ _THEME = Theme(
     }
 )
 
-# Shared console instance — import this anywhere for consistent Rich output
+#: Shared :class:`~rich.console.Console` instance. Import anywhere for
+#: consistent Rich output across the package.
 console = Console(theme=_THEME)
 
 
@@ -35,15 +39,21 @@ class MaCh3Logger:
     """
     Rich-backed logger for mach3sbitools.
 
-    Usage:
+    Wraps :class:`logging.Logger` with a :class:`~rich.logging.RichHandler`
+    for coloured console output and an optional plain-text file handler.
+
+    Usage in application code::
+
         logger = MaCh3Logger("mach3sbi", log_file="run.log", level="INFO")
         logger.info("Training started")
         logger.warning("Something looks off")
         logger.debug("Batch loss: 0.423")
 
-    In submodules:
+    Usage in submodules::
+
         from mach3sbitools.utils.logger import get_logger
         logger = get_logger(__name__)
+        logger.info("Loaded [bold]50k[/] pairs")
     """
 
     LEVELS: ClassVar[dict] = {
@@ -54,7 +64,6 @@ class MaCh3Logger:
         "CRITICAL": logging.CRITICAL,
     }
 
-    # Plain format for file output (no Rich markup)
     FILE_FORMAT = "[%(asctime)s] [%(levelname)-8s] %(name)s: %(message)s"
     DATEFMT = "%Y-%m-%d %H:%M:%S"
 
@@ -67,18 +76,20 @@ class MaCh3Logger:
         show_path: bool = False,
     ):
         """
-        Args:
-            name:       Logger name shown in every log line.
-            level:      Console log level (DEBUG/INFO/WARNING/ERROR/CRITICAL).
-            log_file:   Optional path to write plain-text logs.
-            file_level: File log level; defaults to DEBUG (file gets everything).
-            show_path:  Show the file/line source in console output (useful for debugging).
+        :param name: Logger name shown in every log line.
+        :param level: Console log level (``DEBUG`` / ``INFO`` / ``WARNING`` /
+            ``ERROR`` / ``CRITICAL``).
+        :param log_file: Optional path to write plain-text logs alongside the
+            Rich console output.
+        :param file_level: Log level for the file handler. Defaults to
+            ``DEBUG`` (file receives everything).
+        :param show_path: Show the source file and line number in console
+            output. Useful for debugging.
         """
         self._logger = logging.getLogger(name)
-        self._logger.setLevel(logging.DEBUG)  # handlers do the filtering
+        self._logger.setLevel(logging.DEBUG)
         self._logger.propagate = False
 
-        # ── Rich console handler ────────────────────────────────────────────
         rich_handler = RichHandler(
             console=console,
             level=self.LEVELS.get(level.upper(), logging.INFO),
@@ -87,12 +98,11 @@ class MaCh3Logger:
             show_path=show_path,
             rich_tracebacks=True,
             tracebacks_show_locals=True,
-            markup=True,  # allows [bold red]text[/] in log messages
+            markup=True,
             log_time_format=self.DATEFMT,
         )
         self._logger.addHandler(rich_handler)
 
-        # ── Plain file handler (optional) ───────────────────────────────────
         if log_file is not None:
             log_file = Path(log_file)
             log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -102,44 +112,57 @@ class MaCh3Logger:
             self._logger.addHandler(fh)
             self._logger.info(f"Logging to file: [cyan]{log_file}[/]")
 
-    # ── Convenience pass-throughs ───────────────────────────────────────────
-
     def debug(self, msg: str, *args, **kwargs) -> None:
+        """Log *msg* at DEBUG level."""
         self._logger.debug(msg, *args, **kwargs)
 
     def info(self, msg: str, *args, **kwargs) -> None:
+        """Log *msg* at INFO level."""
         self._logger.info(msg, *args, **kwargs)
 
     def warning(self, msg: str, *args, **kwargs) -> None:
+        """Log *msg* at WARNING level."""
         self._logger.warning(msg, *args, **kwargs)
 
     def error(self, msg: str, *args, **kwargs) -> None:
+        """Log *msg* at ERROR level."""
         self._logger.error(msg, *args, **kwargs)
 
     def critical(self, msg: str, *args, **kwargs) -> None:
+        """Log *msg* at CRITICAL level."""
         self._logger.critical(msg, *args, **kwargs)
 
     def set_level(self, level: str) -> None:
-        """Adjust the console handler level at runtime."""
+        """
+        Adjust the console handler log level at runtime.
+
+        :param level: New log level string.
+        """
         for handler in self._logger.handlers:
             if isinstance(handler, RichHandler):
                 handler.setLevel(self.LEVELS.get(level.upper(), logging.INFO))
 
     @property
     def logger(self) -> logging.Logger:
-        """Expose the underlying logger for stdlib logging compatibility."""
+        """The underlying :class:`logging.Logger` for stdlib compatibility."""
         return self._logger
 
 
 def get_logger(name: str = "mach3sbi") -> logging.Logger:
     """
-    Get a named child logger for use in submodules.
-    Inherits handlers from whichever MaCh3Logger was initialised upstream.
+    Return a named child logger for use in submodules.
 
-    Usage (in any submodule):
+    Inherits handlers from whichever :class:`MaCh3Logger` was initialised
+    upstream, so no additional configuration is needed.
+
+    Usage::
+
         from mach3sbitools.utils.logger import get_logger
         logger = get_logger(__name__)
         logger.info("Loaded [bold]50k[/] pairs")
+
+    :param name: Logger name, typically ``__name__``.
+    :returns: A :class:`logging.Logger` instance.
     """
     return logging.getLogger(name)
 
@@ -152,7 +175,15 @@ def create_progress(
     console: Console = console,
 ) -> tuple[Progress | nullcontext, TaskID | None]:
     """
-    Returns a Progress object and optionally a pre-created epoch task.
+    Build a Rich :class:`~rich.progress.Progress` bar for training.
+
+    :param show_epoch: If ``False``, returns a no-op :func:`~contextlib.nullcontext`
+        and ``None`` instead of a real progress bar.
+    :param total_epochs: Total number of epochs (sets the progress bar maximum).
+    :param description: Label shown next to the progress bar.
+    :param console: Rich console to render into.
+    :returns: Tuple of ``(progress_context, task_id)``. Use as a context
+        manager and call ``progress.update(task_id, advance=1)`` each epoch.
     """
     if not show_epoch:
         return nullcontext(), None
@@ -164,6 +195,5 @@ def create_progress(
         TimeRemainingColumn(),
         console=console,
     )
-
     epoch_task = progress.add_task(description, total=total_epochs)
     return progress, epoch_task

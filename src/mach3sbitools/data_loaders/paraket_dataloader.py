@@ -1,3 +1,7 @@
+"""
+Dataset implementation for feather-based simulation files.
+"""
+
 from pathlib import Path
 
 import torch
@@ -8,8 +12,13 @@ from mach3sbitools.utils import from_feather
 
 
 class ParaketDataset(Dataset):
-    """File-level dataset — one __getitem__ = one feather file.
-    Use .to_tensor_dataset() before training."""
+    """
+    File-level PyTorch dataset over a folder of ``.feather`` simulation files.
+
+    Each ``__getitem__`` call loads one feather file and returns a
+    ``(theta, x)`` pair. Call :meth:`to_tensor_dataset` before training to
+    pre-load everything into RAM as a flat :class:`~torch.utils.data.TensorDataset`.
+    """
 
     def __init__(
         self,
@@ -18,35 +27,44 @@ class ParaketDataset(Dataset):
         nuisance_params: list[str] | None = None,
     ):
         """
-        Constructor for ParaketDataset. This reads a folder of .feather files and constructors a
-        torch TensorDataset
-
-        :param data_folder: Folder containing .feather files
-        :param parameter_names:  Names of parameters to load
-        :param nuisance_params: Names of nuisance parameters to filter by
+        :param data_folder: Directory containing ``.feather`` files.
+        :param parameter_names: Ordered list of parameter names in each file's
+            ``theta`` column.
+        :param nuisance_params: fnmatch patterns for parameters to filter out
+            of *theta* on load.
         """
         self.data_folder = data_folder
         self.files = sorted(data_folder.glob("*.feather"))
         self.nuisance_params = nuisance_params or None
         self.parameter_names = parameter_names
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Number of feather files in the dataset folder."""
         return len(self.files)
 
-    def __getitem__(self, idx) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Load one feather file and return ``(theta, x)`` as tensors.
+
+        :param idx: File index.
+        :returns: Tuple of ``(theta, x)`` float tensors.
+        """
         theta, x = from_feather(
             self.files[idx], self.parameter_names, self.nuisance_params
         )
         return torch.from_numpy(theta), torch.from_numpy(x)
 
-    def to_tensor_dataset(
-        self,
-        device: str = "cpu",
-    ) -> TensorDataset:
+    def to_tensor_dataset(self, device: str = "cpu") -> TensorDataset:
         """
-        Moves to a tensor dataset
-        :param device: Device to load to
-        :return:
+        Pre-load all feather files into a flat :class:`~torch.utils.data.TensorDataset`.
+
+        Concatenates all ``(theta, x)`` pairs along the sample dimension.
+        This avoids repeated disk reads per epoch during training.
+
+        :param device: Target device for the output tensors.
+        :returns: A :class:`~torch.utils.data.TensorDataset` of
+            ``(theta_tensor, x_tensor)`` with shapes
+            ``(n_total_samples, n_params)`` and ``(n_total_samples, n_bins)``.
         """
         all_theta, all_x = [], []
 

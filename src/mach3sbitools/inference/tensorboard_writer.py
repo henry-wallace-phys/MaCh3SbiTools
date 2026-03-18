@@ -1,14 +1,23 @@
+"""
+TensorBoard logging wrapper for the SBI training loop.
+"""
+
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
 
 class TensorBoardWriter:
+    """
+    Thin wrapper around :class:`~torch.utils.tensorboard.SummaryWriter`.
+
+    Writes training scalars (losses, learning rates, throughput, GPU stats)
+    to a TensorBoard event file each epoch.
+    """
+
     def __init__(self, log_dir: str, device_type: str):
         """
-        Wrapper class for TensorBoard writer.
-
-        :param log_dir: Path to logs directory
-        :param device_type: Type of device to use
+        :param log_dir: Directory for TensorBoard event files.
+        :param device_type: PyTorch device type string, e.g. ``"cuda"`` or ``"cpu"``.
         """
         self.writer = SummaryWriter(log_dir=log_dir)
         self.device_type = device_type
@@ -26,22 +35,22 @@ class TensorBoardWriter:
         total_samples: int,
     ) -> None:
         """
-        Add information to the writer
-        :param epoch: Current epoch number
-        :param train_loss: Current training loss
-        :param val_loss: Current validation loss
-        :param ema_val_loss: Current ema validation loss
-        :param best_val_loss: Current best validation loss
-        :param optimizer: Current optimizer
-        :param elapsed: Current elapsed time
-        :param epochs_no_improve: Current number of epochs without improvement
-        :param total_samples: Total number of samples
-        :return:
+        Write all training scalars for one epoch.
+
+        Records loss curves, per-group learning rates, throughput metrics,
+        early-stopping state, and GPU memory statistics.
+
+        :param epoch: Current epoch number (x-axis value).
+        :param train_loss: Mean training loss for the epoch.
+        :param val_loss: Mean validation loss for the epoch.
+        :param ema_val_loss: EMA-smoothed validation loss.
+        :param best_val_loss: Best EMA validation loss seen so far.
+        :param optimizer: Current optimiser (used to read learning rates).
+        :param elapsed: Wall-clock seconds for the epoch.
+        :param epochs_no_improve: Current early-stopping counter.
+        :param total_samples: Number of training steps in the epoch
+            (used for throughput calculation).
         """
-
-        if self.writer is None:
-            return
-
         self.writer.add_scalar("loss/train", train_loss, epoch)
         self.writer.add_scalar("loss/val", val_loss, epoch)
         self.writer.add_scalar("loss/val_ema", ema_val_loss, epoch)
@@ -55,7 +64,6 @@ class TensorBoardWriter:
             "throughput/samples_per_sec", total_samples / elapsed, epoch
         )
         self.writer.add_scalar("throughput/epoch_seconds", elapsed, epoch)
-
         self.writer.add_scalar(
             "early_stopping/epochs_no_improve", epochs_no_improve, epoch
         )
@@ -80,7 +88,17 @@ class TensorBoardWriter:
             )
 
     def get_gpu_stats(self) -> dict:
-        """Return GPU memory and SM utilisation stats for TensorBoard monitoring."""
+        """
+        Return GPU memory and utilisation statistics.
+
+        Returns zeros for all fields when running on CPU or when CUDA is
+        unavailable.
+
+        :returns: Dict with keys ``allocated_mb``, ``reserved_mb``,
+            ``max_reserved_mb``, ``memory_utilization_pct``, and optionally
+            ``sm_utilization_pct`` and ``memory_bandwidth_utilization_pct``
+            when CUDA is active.
+        """
         if not torch.cuda.is_available() or self.device_type == "cpu":
             return {
                 "allocated_mb": 0,
@@ -101,7 +119,7 @@ class TensorBoardWriter:
             "memory_utilization_pct": mem_util,
         }
 
-    def close(self):
-        """Close the writer."""
+    def close(self) -> None:
+        """Flush and close the underlying :class:`~torch.utils.tensorboard.SummaryWriter`."""
         self.writer.flush()
         self.writer.close()

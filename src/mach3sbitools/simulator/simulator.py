@@ -1,3 +1,11 @@
+"""
+High-level simulator wrapper.
+
+Combines prior construction and forward simulation into a single interface,
+handling bad simulations gracefully and persisting results as Arrow feather
+files.
+"""
+
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +23,12 @@ logger = get_logger()
 
 class Simulator:
     """
-    Wraps around a simulator protocol object.
+    Wraps a :class:`~mach3sbitools.simulator.simulator_injector.SimulatorProtocol`
+    with prior construction and simulation utilities.
+
+    The simulator draws parameter vectors from the prior, passes each through
+    the underlying simulator, and applies Poisson smearing to the output.
+    Failed simulations are skipped with a warning.
     """
 
     def __init__(
@@ -27,14 +40,18 @@ class Simulator:
         cyclical_pars: list[str] | None = None,
     ):
         """
-        The main simulator interface
-        :param module_name: The name of the module to import i.e. mymodule.submodule. ...
-        :param class_name: The name of the class in the module
-        :param config: The path to the config file (all simulators are required to be configurable)
-        :param nuisance_pars: The parameters to filter out
-        :param cyclical_pars: Parameters which use a cyclical distribution (±2pi)
-        """
+        Instantiate the simulator and build its prior.
 
+        :param module_name: Dotted Python module path containing the simulator
+            class (e.g. ``'mypackage.simulator'``).
+        :param class_name: Name of the simulator class. Must implement
+            :class:`~mach3sbitools.simulator.simulator_injector.SimulatorProtocol`.
+        :param config: Path to the simulator configuration file.
+        :param nuisance_pars: fnmatch patterns for parameters to exclude from
+            the prior and saved outputs.
+        :param cyclical_pars: fnmatch patterns for parameters that use a
+            cyclical sinusoidal prior over ``[-2π, 2π]``.
+        """
         self.simulator_wrapper: SimulatorProtocol = get_simulator(
             module_name, class_name, config
         )
@@ -46,17 +63,23 @@ class Simulator:
 
     def simulate(self, n_samples: int) -> tuple[SimulatorData, SimulatorData]:
         """
-        Generate up to n_samples samples from the simulator.
+        Draw *n_samples* from the prior and run the forward simulator.
 
-        :param n_samples: Number of samples to generate
-        :return: theta, x
+        Each successful simulation draws ``θ ~ prior``, calls
+        ``simulator.simulate(θ)``, then applies Poisson smearing
+        ``x ~ Poisson(simulator_output)``. Samples that raise an exception
+        are silently skipped.
+
+        :param n_samples: Number of simulation attempts.
+        :returns: Tuple of ``(theta, x)`` arrays, each of length ≤ *n_samples*.
+            Fewer samples are returned if any simulations failed.
         """
         samples = self.prior.sample((n_samples,))
         theta = samples.cpu().numpy()
 
         valid_theta = np.empty_like(theta)
         valid_x = None
-        count = 0  # Keep track of good simulations
+        count = 0
 
         for i, t in enumerate(tqdm(theta, desc="Simulating")):
             try:
@@ -85,25 +108,31 @@ class Simulator:
         prior_path: Path | None = None,
     ) -> None:
         """
-        Saves the sampled data to an Arrow file.
-        :param file_path: Path to the output Arrow file
-        :param theta: Sampled theta values
-        :param x: Sampled x values
-        :param prior_path: Where to save the prior data.
+        Save simulation outputs to a feather file.
+
+        Optionally also pickles the prior alongside the data.
+
+        :param file_path: Destination ``.feather`` file path.
+        :param theta: Sampled parameter arrays, shape ``(n, n_params)``.
+        :param x: Simulated observable arrays, shape ``(n, n_bins)``.
+        :param prior_path: If provided, the prior is also saved here as a
+            ``.pkl`` file.
         """
-        # Save the simulations to a feather file
         to_feather(file_path, theta, x)
-        # We can also save our prior
         if prior_path is not None:
             prior_path.parent.mkdir(parents=True, exist_ok=True)
             self.prior.save(prior_path)
 
-    def save_data(self, file_path: Path):
+    def save_data(self, file_path: Path) -> None:
         """
-        Save "data" generated from the simulator. Useful for testing many data points
+        Save the observed data bins from the simulator to a parquet file.
 
-        :param file_path: The path to save to
-        :return:
+        Calls :meth:`~mach3sbitools.simulator.simulator_injector.SimulatorProtocol.get_data_bins`
+        and writes the result under the key ``"data"``. Useful for producing
+        the observation vector *x_o* used during inference.
+
+        :param file_path: Destination ``.parquet`` file path. Parent
+            directories are created automatically.
         """
         file_path.parent.mkdir(parents=True, exist_ok=True)
         data_table = {"data": self.simulator_wrapper.get_data_bins()}
