@@ -9,7 +9,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from mach3sbitools.types import BoundaryConditions, NominalError
+from mach3sbitools.types import BoundaryConditions
 from mach3sbitools.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -60,7 +60,7 @@ class SimulatorProtocol(Protocol):
     def get_parameter_names(self) -> Sequence[str]: ...
 
     # Get the bounds as a [lower, upper]
-    def get_bounds(self) -> BoundaryConditions: ...
+    def get_parameter_bounds(self) -> BoundaryConditions: ...
 
     # Check if a given parameter is flat
     def get_is_flat(self, i: int) -> bool: ...
@@ -69,9 +69,12 @@ class SimulatorProtocol(Protocol):
     def get_data_bins(self) -> Sequence[float]: ...
 
     # Get the nominal (mean) values
-    def get_nominal_error(self) -> NominalError: ...
+    def get_parameter_nominals(self) -> Sequence[float]: ...
 
-    # Get the correlation matrix
+    # Get the nominal (mean) values
+    def get_parameter_errors(self) -> Sequence[float]: ...
+
+    # Get the covariance matrix
     def get_covariance_matrix(self) -> np.ndarray: ...
 
 

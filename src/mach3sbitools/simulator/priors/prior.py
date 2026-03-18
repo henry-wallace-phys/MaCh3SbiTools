@@ -12,6 +12,7 @@ Checks are done in the following order
 """
 
 import fnmatch
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
@@ -20,7 +21,7 @@ import numpy as np
 import torch
 from torch.distributions import MultivariateNormal, Uniform, constraints
 
-from mach3sbitools.utils import TorchDeviceHandler
+from mach3sbitools.utils import TorchDeviceHandler, get_logger
 
 from ..simulator_injector import SimulatorProtocol
 from .cyclical_distribution import CyclicalDistribution
@@ -30,6 +31,9 @@ size_: TypeAlias = torch.Size | list[int] | tuple[int, ...]
 
 
 class PriorNotFound(Exception): ...
+
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -206,6 +210,45 @@ class Prior(torch.distributions.Distribution):
         return self
 
 
+def _check_boundary(
+    nominal: torch.Tensor,
+    error: torch.Tensor,
+    lower_bound: torch.Tensor,
+    upper_bound: torch.Tensor,
+    parameter_names: np.ndarray,
+) -> None:
+    """
+    print a warning if any parameters have massive boundaries
+    """
+
+    warning_thresh = 10
+
+    warning_ub = nominal + error * warning_thresh
+    warning_lb = nominal - error * warning_thresh
+
+    mask = (lower_bound < warning_lb) | (upper_bound > warning_ub)
+
+    logger.warning(
+        "The following parameters have boundaries > {:d}σ from their prior nominal".format(
+            warning_thresh
+        )
+    )
+    parameter_names_masked = parameter_names[mask.cpu().numpy()]
+    nominals_masked = nominal[mask]
+    errors_masked = error[mask]
+    lb_masked = lower_bound[mask]
+    ub_masked = upper_bound[mask]
+
+    for param_info in zip(
+        parameter_names_masked, nominals_masked, errors_masked, lb_masked, ub_masked
+    ):
+        logger.warning(
+            "   '{:s}' | Nominal: {:4f}, Error {:4f} | Lower Bnd {:4f}, Upper Bnd {:4f}".format(
+                *param_info
+            )
+        )
+
+
 def create_prior(
     simulator_instance: SimulatorProtocol,
     nuisance_pars: list[str] | None = None,
@@ -224,19 +267,30 @@ def create_prior(
     Returns:
         MaCh3Prior object compatible with SBI
     """
-    nominals, _errors = simulator_instance.get_nominal_error()
-    bounds = simulator_instance.get_bounds()
-    names = simulator_instance.get_parameter_names()
-    flat_pars = [simulator_instance.get_is_flat(i) for i in range(len(names))]
-    covariance = simulator_instance.get_covariance_matrix()
-
+    logger.info("Creating Prior")
     dh = TorchDeviceHandler()
+
+    # Make everything a tensor
+    nominals = dh.to_tensor(simulator_instance.get_parameter_nominals())
+    errors = dh.to_tensor(simulator_instance.get_parameter_errors())
+    lower, upper = simulator_instance.get_parameter_bounds()
+
+    lower = dh.to_tensor(lower)
+    upper = dh.to_tensor(upper)
+    names = np.array(simulator_instance.get_parameter_names(), dtype=str)
+
+    _check_boundary(nominals, errors, lower, upper, names)
+
+    covariance = dh.to_tensor(simulator_instance.get_covariance_matrix())
+
+    flat_pars = [simulator_instance.get_is_flat(i) for i in range(len(names))]
+
     data = PriorData(
-        parameter_names=np.array(names, dtype=str),
-        nominals=dh.to_tensor(nominals),
-        lower_bounds=dh.to_tensor(bounds[0]),
-        upper_bounds=dh.to_tensor(bounds[1]),
-        covariance_matrix=dh.to_tensor(covariance),
+        parameter_names=names,
+        nominals=nominals,
+        lower_bounds=lower,
+        upper_bounds=upper,
+        covariance_matrix=covariance,
     )
 
     return Prior(
