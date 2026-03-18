@@ -26,7 +26,7 @@ jobs:
       - name: Install package + doc dependencies
         run: |
           pip install -e ".[dev]"
-          pip install sphinx "sphinx-autodoc-typehints>=2.3.0" furo
+          pip install sphinx "sphinx-autodoc-typehints>=2.3.0" furo sphinx-click
 
       - name: Build HTML docs
         run: |

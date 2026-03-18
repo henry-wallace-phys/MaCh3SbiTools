@@ -2,7 +2,12 @@ mach3sbitools
 =============
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: API Reference
 
-   source/modules
+   modules/cli
+   modules/simulator
+   modules/inference
+   modules/data
+   modules/utils
+   modules/tests

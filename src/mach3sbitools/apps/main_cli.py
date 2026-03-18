@@ -13,120 +13,179 @@ nuisance_par_opt = click.option(
     "--nuisance_pars",
     "-p",
     multiple=True,
-    help="List of parameter names to exclude from the simulator",
+    help="Parameter name patterns (fnmatch-style, e.g. 'syst_*') to exclude from the prior and training.",
 )
 
 _LOGGER_OPTIONS = [
-    click.option("--log-level", help="Logging level", default="INFO"),
-    click.option("--log_file", help="Save the log file"),
+    click.option(
+        "--log-level",
+        help="Console logging level. One of DEBUG, INFO, WARNING, ERROR.",
+        default="INFO",
+    ),
+    click.option("--log_file", help="Optional path to write a plain-text log file."),
 ]
 
 _SIMULATOR_OPTIONS = [
     click.option(
         "--simulator_module",
         "-m",
-        help="Name of the simulator module (i.e. Simulator.simulator_module)",
+        help="Dotted Python module path containing the simulator class (e.g. 'mypackage.simulator').",
         required=True,
     ),
     click.option(
         "--simulator_class",
         "-s",
-        help="Name of the simulator class (i.e. SimulatorClass)",
+        help="Name of the simulator class within the module. Must implement SimulatorProtocol.",
         required=True,
     ),
     click.option(
         "--config",
         "-c",
-        help="Name of the simulator configuration file (i.e. FitterConfig.yaml)",
+        help="Path to the simulator configuration file (e.g. a MaCh3 fitter YAML).",
         required=True,
     ),
-    click.option("--output_file", "-o", help="Name of the output file", required=True),
+    click.option("--output_file", "-o", help="Path to write the output file."),
     nuisance_par_opt,
-    # Optional params,
     click.option(
-        "--cyclical_pars", "-s", multiple=True, help="List of cyclical parameters"
+        "--cyclical_pars",
+        "-s",
+        multiple=True,
+        help="Parameter name patterns (fnmatch-style) that should use a cyclical sinusoidal prior over [-2π, 2π].",
     ),
 ]
 
 _INFERENCE_OPTIONS = [
-    click.option("--prior_path", "-r", help="Path to the prior file", required=True),
+    click.option(
+        "--prior_path", "-r", help="Path to a saved Prior .pkl file.", required=True
+    ),
     nuisance_par_opt,
 ]
 
 _MODEL_OPTIONS = [
-    click.option("--model", help="Name of the model", default="maf"),
-    click.option("--hidden", help="number of hidden neurons", default=64),
-    click.option("--dropout", help="dropout rate", default=0.2),
-    click.option("--num_blocks", help="number of blocks", default=2),
     click.option(
-        "--transforms", help="number of transformations for (only for MAF)", default=5
+        "--model",
+        help="Density estimator architecture. One of: 'maf' (Masked Autoregressive Flow) or 'nse' (Neural Spline Flow).",
+        default="maf",
     ),
-    click.option("--num_bins", help="number of bins for (only for NSE)", default=10),
+    click.option(
+        "--hidden",
+        help="Number of hidden units per layer in the density estimator.",
+        default=64,
+    ),
+    click.option(
+        "--dropout", help="Dropout probability applied during training.", default=0.2
+    ),
+    click.option(
+        "--num_blocks",
+        help="Number of residual blocks in the density estimator.",
+        default=2,
+    ),
+    click.option(
+        "--transforms",
+        help="Number of autoregressive transforms (MAF only).",
+        default=5,
+    ),
+    click.option("--num_bins", help="Number of spline bins (NSF only).", default=10),
 ]
 
 _TRAINING_OPTIONS = [
-    click.option("--batch_size", help="Batch size", default=2048, type=int),
-    click.option("--max_epochs", help="Number of epochs", default=int(1e5), type=int),
     click.option(
-        "--warmup_epochs", help="Number of epochs to warm up", default=50, type=int
+        "--batch_size",
+        help="Number of samples per training batch.",
+        default=2048,
+        type=int,
     ),
     click.option(
-        "--ema_alpha", help="EMA smoothing parameter", default=0.01, type=float
+        "--max_epochs",
+        help="Maximum number of training epochs.",
+        default=int(1e5),
+        type=int,
     ),
-    click.option("--learning_rate", help="Learning rate", default=5e-4, type=float),
+    click.option(
+        "--warmup_epochs",
+        help="Number of epochs for linear learning-rate warm-up from 1% to 100%.",
+        default=50,
+        type=int,
+    ),
+    click.option(
+        "--ema_alpha",
+        help="Smoothing factor for the exponential moving average of validation loss used in early stopping.",
+        default=0.01,
+        type=float,
+    ),
+    click.option(
+        "--learning_rate",
+        help="Initial learning rate for the Adam optimiser.",
+        default=5e-4,
+        type=float,
+    ),
     click.option(
         "--stop_after_epochs",
-        help="Number of epochs to stop after plateauing",
+        help="Stop training if the EMA validation loss has not improved for this many epochs.",
         type=int,
         default=50,
     ),
     click.option(
         "--validation_fraction",
-        help="Fraction of data to use for validation",
+        help="Fraction of data held out for validation.",
         type=float,
         default=0.1,
     ),
-    click.option("--num_workers", help="Number of workers", default=1, type=int),
+    click.option(
+        "--num_workers",
+        help="Number of DataLoader worker processes for data loading.",
+        default=1,
+        type=int,
+    ),
     click.option(
         "--autosave_every",
-        help="Number of epochs to save the model",
+        help="Save a checkpoint every N epochs (in addition to best-model saves).",
         default=1,
         type=int,
     ),
     click.option(
         "--resume_checkpoint",
         type=click.Path(exists=True),
-        help="Path to checkpoint to resume training",
+        help="Path to a checkpoint file to resume training from.",
     ),
-    click.option("--use_amp", help="Use AMP", is_flag=True, default=False),
+    click.option(
+        "--use_amp",
+        help="Enable automatic mixed precision (AMP) training. May not improve performance on all hardware.",
+        is_flag=True,
+        default=False,
+    ),
     click.option(
         "--print_interval",
-        help="Print training progress every this many steps",
+        help="Log training progress every N epochs.",
         default=1,
         type=int,
     ),
-    click.option("--tensorboard_dir", help="Tensorboard directory", default=None),
+    click.option(
+        "--tensorboard_dir",
+        help="Directory for TensorBoard event files. Omit to disable TensorBoard logging.",
+        default=None,
+    ),
     click.option(
         "--scheduler_patience",
-        help="Number of epochs to wait before reducing lr",
+        help="Number of epochs without improvement before the ReduceLROnPlateau scheduler halves the learning rate.",
         default=20,
         type=int,
     ),
     click.option(
         "--show_progress_bar",
-        help="Show global progress bar",
+        help="Show a global epoch progress bar (recommended for interactive/Jupyter use).",
         is_flag=True,
         default=False,
     ),
     click.option(
         "--show_epoch_progress",
-        help="Show epoch progress bar",
+        help="Show a per-epoch step progress bar (recommended for interactive/Jupyter use).",
         is_flag=True,
         default=False,
     ),
     click.option(
         "--compile_model",
-        help="Compile the model. WARNING: This can be slow!",
+        help="Compile the model with torch.compile. Can reduce per-step time on supported hardware but increases startup time.",
         is_flag=True,
         default=False,
     ),
@@ -134,7 +193,7 @@ _TRAINING_OPTIONS = [
 
 
 def apply_options(options):
-    """Generic decorator factory for any list of options."""
+    """Generic decorator factory for any list of click options."""
 
     def decorator(f):
         for option in reversed(options):
@@ -147,6 +206,10 @@ def apply_options(options):
 @click.group()
 @apply_options(_LOGGER_OPTIONS)
 def cli(log_file: Path, log_level: str):
+    """mach3sbi — simulation-based inference tools for MaCh3.
+
+    Run ``mach3sbi COMMAND --help`` for detailed usage of each subcommand.
+    """
     MaCh3Logger(
         name=__name__,
         level=log_level,
@@ -154,9 +217,10 @@ def cli(log_file: Path, log_level: str):
     )
 
 
-@cli.command("create_prior", short_help="Generate prior from simulator instance")
+@cli.command(
+    "create_prior", short_help="Generate and save a prior from a simulator instance."
+)
 @apply_options(_SIMULATOR_OPTIONS)
-# Mandatory params
 def save_prior(
     simulator_module: str,
     simulator_class: str,
@@ -165,18 +229,34 @@ def save_prior(
     nuisance_pars: list[str] | None,
     cyclical_pars: list[str] | None,
 ):
-    # Creates a static prior object
+    """Generate a Prior from a simulator and save it to disk.
+
+    Instantiates the simulator, reads its parameter names, bounds, nominals,
+    and covariance, then constructs and pickles a Prior object ready for use
+    in training and inference.
+
+    Example::
+
+        mach3sbi create_prior \\
+            -m mypackage.simulator -s MySimulator \\
+            -c config.yaml -o prior.pkl
+    """
     injector = get_simulator(simulator_module, simulator_class, config)
     prior = create_prior(injector, nuisance_pars, cyclical_pars)
     prior.save(output_file)
 
 
-@cli.command("simulate", short_help="Produce simulations from the simulator")
+@cli.command("simulate", short_help="Run simulations and save to feather files.")
 @apply_options(_SIMULATOR_OPTIONS)
 @click.option(
-    "--n_simulations", "-n", required=True, help="Number of simulations to run"
+    "--n_simulations",
+    "-n",
+    required=True,
+    help="Number of simulation samples to generate.",
 )
-@click.option("--prior_file", "-r", help="File to save the prior from this process to")
+@click.option(
+    "--prior_file", "-r", help="Optional path to also save the prior used for this run."
+)
 def simulate(
     simulator_module: str,
     simulator_class: str,
@@ -187,8 +267,19 @@ def simulate(
     cyclical_pars: list[str] | None,
     prior_file: Path | None,
 ):
+    """Draw samples from the prior and run the simulator for each.
 
-    # Runs the simulator
+    Samples ``n_simulations`` parameter vectors θ from the prior, passes each
+    through the simulator, applies Poisson smearing to the output, and saves
+    the (θ, x) pairs as a feather file. Failed simulations are skipped with a
+    warning.
+
+    Example::
+
+        mach3sbi simulate \\
+            -m mypackage.simulator -s MySimulator \\
+            -c config.yaml -n 100000 -o sims.feather
+    """
     simulator = Simulator(
         simulator_module,
         simulator_class,
@@ -196,14 +287,13 @@ def simulate(
         nuisance_pars=nuisance_pars,
         cyclical_pars=cyclical_pars,
     )
-
     x, theta = simulator.simulate(n_simulations)
     simulator.save(output_file, x, theta, prior_file)
 
 
 @cli.command(
     "save_data",
-    short_help="When accessible from the simulator, get data + save to paraquet",
+    short_help="Save observed data bins from the simulator to parquet.",
 )
 @apply_options(_SIMULATOR_OPTIONS)
 def save_data(
@@ -214,8 +304,18 @@ def save_data(
     nuisance_pars: list[str] | None,
     cyclical_pars: list[str] | None,
 ):
+    """Extract and save the observed data bins from the simulator.
 
-    # Runs the simulator
+    Calls ``get_data_bins()`` on the simulator and writes the result to a
+    parquet file. Useful for producing the observed data vector ``x_o``
+    that is passed to ``inference``.
+
+    Example::
+
+        mach3sbi save_data \\
+            -m mypackage.simulator -s MySimulator \\
+            -c config.yaml -o observed.parquet
+    """
     simulator = Simulator(
         simulator_module,
         simulator_class,
@@ -226,16 +326,16 @@ def save_data(
     simulator.save_data(output_file)
 
 
-@cli.command("train", short_help="Train the model")
+@cli.command("train", short_help="Train the NPE density estimator.")
 @click.option(
-    "--save-dir", "-s", help="Directory to save the trained model", required=True
+    "--save-dir", "-s", help="Directory to write model checkpoints to.", required=True
 )
 @click.option(
     "--dataset",
     "-d",
     type=click.Path(exists=True),
     required=True,
-    help="Path to the data folder",
+    help="Path to folder of .feather simulation files.",
 )
 @apply_options(_INFERENCE_OPTIONS)
 @apply_options(_MODEL_OPTIONS)
@@ -245,7 +345,6 @@ def train(
     prior_path: Path,
     dataset: Path,
     nuisance_pars: list[str] | None,
-    # Training pars
     model: str,
     hidden: int,
     dropout: float,
@@ -270,13 +369,26 @@ def train(
     show_epoch_progress: bool,
     compile_model: bool,
 ):
+    """Train a Neural Posterior Estimation (NPE) density estimator.
+
+    Loads simulations from ``--dataset``, builds an NPE model with the
+    specified architecture, and trains it with a custom loop featuring
+    linear warm-up, ReduceLROnPlateau scheduling, EMA-based early stopping,
+    and periodic checkpointing.
+
+    Example::
+
+        mach3sbi train \\
+            -r prior.pkl -d sims/ -s models/ \\
+            --model maf --hidden 128 --transforms 8 \\
+            --max_epochs 50000 --stop_after_epochs 200
+    """
     logger = get_logger()
     if compile_model:
         logger.warning(
             "Request model compilation. In testing this has been shown to be slower"
         )
 
-    # Painful but needed
     posterior_config = PosteriorConfig(
         model=model,
         hidden_features=hidden,
@@ -310,25 +422,26 @@ def train(
     inference_handler = InferenceHandler(prior_path, nuisance_pars)
     inference_handler.set_dataset(dataset)
     inference_handler.load_training_data()
-
     inference_handler.create_posterior(posterior_config)
     inference_handler.train_posterior(training_config)
 
 
-@cli.command(short_help="Perform inference with the SBI")
+@cli.command(short_help="Sample the posterior given observed data.")
 @click.option(
     "--posterior",
     "-i",
     type=click.Path(exists=True),
     required=True,
-    help="Path to the posterior file",
+    help="Path to a saved density estimator checkpoint (.pt).",
 )
-@click.option("--n_samples", "-n", required=True, help="Number of samples")
+@click.option(
+    "--n_samples", "-n", required=True, help="Number of posterior samples to draw."
+)
 @click.option(
     "--observed_data-file",
     "-o",
     type=click.Path(exists=True),
-    help="Path to the observed data",
+    help="Path to the observed data parquet file (produced by save_data).",
 )
 @apply_options(_MODEL_OPTIONS)
 @apply_options(_INFERENCE_OPTIONS)
@@ -346,7 +459,20 @@ def inference(
     transforms: int,
     num_bins: int,
 ):
-    # Performs inference using a trained SBI model and saves to a paraquet file
+    """Sample the posterior distribution conditioned on observed data.
+
+    Loads a trained density estimator, conditions it on the observed data
+    vector from ``--observed_data-file``, draws ``--n_samples`` posterior
+    samples, and writes them as a parquet file with one column per parameter.
+
+    The model architecture flags must match those used during ``train``.
+
+    Example::
+
+        mach3sbi inference \\
+            -i models/best.pt -r prior.pkl \\
+            -n 100000 -o observed.parquet
+    """
     posterior_config = PosteriorConfig(
         model=model,
         hidden_features=hidden,
@@ -360,11 +486,9 @@ def inference(
     inference_handler.load_posterior(posterior_path, posterior_config)
 
     parameter_names = inference_handler.prior.prior_data.parameter_names
-
     observed_data = pq.read_table(observed_data_file)
-
     samples = inference_handler.sample_posterior(n_samples, observed_data).cpu()
-    # Write to dataframe
+
     data_table = pd.DataFrame({p: samples[:, i] for i, p in enumerate(parameter_names)})
     pq.write_table(data_table, save_dir)
 

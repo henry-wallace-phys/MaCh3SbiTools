@@ -3,6 +3,7 @@ import sys
 from importlib.metadata import version as get_version
 
 sys.path.insert(0, os.path.abspath("../src"))
+sys.path.insert(0, os.path.abspath("../tests"))
 
 project = "mach3sbitools"
 author = "Henry Wallace"
@@ -14,8 +15,8 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
-]
-# Suppress warnings from third-party packages
+    "sphinx_click",
+]  # Suppress warnings from third-party packages
 suppress_warnings = [
     "ref.ref",  # undefined labels in torch/rich docstrings
     "ref.doc",
