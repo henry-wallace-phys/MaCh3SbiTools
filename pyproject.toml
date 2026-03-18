@@ -32,7 +32,7 @@ dev = [
 mach3sbi = "mach3sbitools.apps.main_cli:cli"
 
 [tool.pytest.ini_options]
-addopts = "-v --tb=short --cov=mach3sbitools --cov=src/mach3sbitools tests/  --cov-report=term-missing"
+addopts = "-v --tb=short --cov=mach3sbitools tests/  --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["mach3sbitools"]
