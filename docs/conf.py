@@ -26,7 +26,7 @@ suppress_warnings = [
 
 sphinx_click_mock_imports = ["mach3sbitools", "pyarrow", "pandas"]
 
-html_theme = "furo"
+html_theme = "solar-theme"
 
 html_theme_options = {
     "sidebar_hide_name": False,
