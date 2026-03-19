@@ -35,7 +35,6 @@ docs = [
     "furo"
 ]
 
-
 [project.scripts]
 mach3sbi = "mach3sbitools.apps.main_cli:cli"
 

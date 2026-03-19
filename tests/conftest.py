@@ -123,4 +123,5 @@ def training_config(model_save_path):
         max_epochs=100,
         autosave_every=500,
         print_interval=100,
+        show_progress=True,
     )

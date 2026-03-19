@@ -4,16 +4,20 @@ Rich-backed logging utilities for mach3sbitools.
 
 import logging
 from contextlib import nullcontext
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TaskID,
     TextColumn,
+    TimeElapsedColumn,
     TimeRemainingColumn,
 )
 from rich.theme import Theme
@@ -30,8 +34,8 @@ _THEME = Theme(
     }
 )
 
-#: Shared :class:`~rich.console.Console` instance. Import anywhere for
-#: consistent Rich output across the package.
+#: Shared :class:`~rich.console.Console` instance used by both the logger
+#: and the progress bar so Rich can route log lines above the live display.
 console = Console(theme=_THEME)
 
 
@@ -45,9 +49,6 @@ class MaCh3Logger:
     Usage in application code::
 
         logger = MaCh3Logger("mach3sbi", log_file="run.log", level="INFO")
-        logger.info("Training started")
-        logger.warning("Something looks off")
-        logger.debug("Batch loss: 0.423")
 
     Usage in submodules::
 
@@ -81,10 +82,8 @@ class MaCh3Logger:
             ``ERROR`` / ``CRITICAL``).
         :param log_file: Optional path to write plain-text logs alongside the
             Rich console output.
-        :param file_level: Log level for the file handler. Defaults to
-            ``DEBUG`` (file receives everything).
-        :param show_path: Show the source file and line number in console
-            output. Useful for debugging.
+        :param file_level: Log level for the file handler. Defaults to ``DEBUG``.
+        :param show_path: Show source file and line number in console output.
         """
         self._logger = logging.getLogger(name)
         self._logger.setLevel(logging.DEBUG)
@@ -152,48 +151,140 @@ def get_logger(name: str = "mach3sbi") -> logging.Logger:
     """
     Return a named child logger for use in submodules.
 
-    Inherits handlers from whichever :class:`MaCh3Logger` was initialised
-    upstream, so no additional configuration is needed.
-
-    Usage::
-
-        from mach3sbitools.utils.logger import get_logger
-        logger = get_logger(__name__)
-        logger.info("Loaded [bold]50k[/] pairs")
-
     :param name: Logger name, typically ``__name__``.
     :returns: A :class:`logging.Logger` instance.
     """
     return logging.getLogger(name)
 
 
+@dataclass
+class TrainingProgress:
+    """
+    Container returned by :func:`create_progress`.
+
+    Wraps the single shared :class:`~rich.progress.Progress` instance and the
+    two task IDs so the training loop can advance each bar independently.
+
+    Using one ``Progress`` for both tasks means there is a single ``Live``
+    context owning the terminal — log messages written through the shared
+    :data:`console` are always printed *above* both bars without tearing.
+
+    :param progress: The Rich ``Progress`` object.  Use as a context manager
+        (``with training_progress.progress:``) for the duration of training.
+    :param fit_task: Task ID for the overall fit bar.  Advance once per epoch.
+    :param epoch_task: Task ID for the per-epoch batch bar.  Reset to zero at
+        the start of each epoch, advance once per batch step.
+    """
+
+    progress: Progress
+    fit_task: TaskID
+    epoch_task: TaskID
+
+    # ── convenience helpers used by the training loop ─────────────────────────
+
+    def start_epoch(self, epoch: int, total_epochs: int, n_steps: int) -> None:
+        """
+        Reset the epoch bar and update the fit-bar description for *epoch*.
+
+        Call once at the top of each epoch before iterating over batches.
+
+        :param epoch: Current epoch number (1-based).
+        :param total_epochs: Total number of epochs (for the description label).
+        :param n_steps: Number of batch steps in this epoch.
+        """
+        self.progress.reset(self.epoch_task, total=n_steps)
+        self.progress.update(
+            self.fit_task,
+            description=f"[green]Fit  epoch {epoch}/{total_epochs}",
+        )
+
+    def step_batch(self) -> None:
+        """Advance the epoch (batch) bar by one step."""
+        self.progress.advance(self.epoch_task)
+
+    def finish_epoch(self, train_loss: float, val_loss: float) -> None:
+        """
+        Advance the fit bar by one epoch and annotate both bars with losses.
+
+        :param train_loss: Mean training loss for the completed epoch.
+        :param val_loss: Mean validation loss for the completed epoch.
+        """
+        self.progress.advance(self.fit_task)
+        loss_str = f"train {train_loss:.4f}  val {val_loss:.4f}"
+        self.progress.update(self.fit_task, extra=loss_str)
+        self.progress.update(self.epoch_task, extra=loss_str)
+
+
 def create_progress(
     *,
-    show_epoch: bool = True,
-    total_epochs: int = 1,
-    description: str = "Training",
+    total_epochs: int,
+    steps_per_epoch: int,
+    show_progress: bool = True,
     console: Console = console,
-) -> tuple[Progress | nullcontext, TaskID | None]:
+) -> TrainingProgress | nullcontext:
     """
-    Build a Rich :class:`~rich.progress.Progress` bar for training.
+    Build a two-level nested progress display for training.
 
-    :param show_epoch: If ``False``, returns a no-op :func:`~contextlib.nullcontext`
-        and ``None`` instead of a real progress bar.
-    :param total_epochs: Total number of epochs (sets the progress bar maximum).
-    :param description: Label shown next to the progress bar.
-    :param console: Rich console to render into.
-    :returns: Tuple of ``(progress_context, task_id)``. Use as a context
-        manager and call ``progress.update(task_id, advance=1)`` each epoch.
+    Returns a :class:`TrainingProgress` that renders two bar rows inside a
+    single ``Live`` context::
+
+        Fit   epoch 12/500  ━━━━━━━━╸━━━━━━━━━━━━━━━━  12/500 • 0:00:14 < 0:09:43 • train 1.2345  val 1.3456
+        Epoch              ━━━━━━━━━━━━━━━━━━━━━━━━━╸━  97/100 • 0:00:01 < 0:00:00 • train 1.2345  val 1.3456
+
+    Because both tasks share one ``Progress`` / ``Live`` instance, log
+    messages written via :data:`console` are always routed *above* the bars.
+    ``redirect_stdout`` / ``redirect_stderr`` catch any output that bypasses
+    Rich (e.g. from PyTorch internals) and route it the same way.
+
+    When *show_progress* is ``False`` a :func:`~contextlib.nullcontext` is
+    returned so callers can use ``with create_progress(...):`` unconditionally.
+
+    Typical usage in a training loop::
+
+        tp = create_progress(total_epochs=500, steps_per_epoch=len(loader))
+        with tp.progress:
+            for epoch in range(1, 501):
+                tp.start_epoch(epoch, 500, len(loader))
+                for theta, x in loader:
+                    ...
+                    tp.step_batch()
+                tp.finish_epoch(train_loss, val_loss)
+
+    :param total_epochs: Maximum number of training epochs.
+    :param steps_per_epoch: Number of batches per epoch.
+    :param show_progress: ``False`` disables all display (CI / non-interactive).
+    :param console: Rich console.  Must be the same instance used by
+        :class:`MaCh3Logger` so log output is routed correctly.
+    :returns: :class:`TrainingProgress` or :func:`~contextlib.nullcontext`.
     """
-    if not show_epoch:
-        return nullcontext(), None
+    if not show_progress:
+        return nullcontext()
+
+    _COLUMNS = [
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description:<24}"),
+        BarColumn(bar_width=40),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TimeElapsedColumn(),
+        TextColumn("<"),
+        TimeRemainingColumn(),
+        TextColumn("• [dim]{task.fields[extra]}"),
+    ]
 
     progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold green]{task.description}"),
-        TextColumn("• Epoch {task.completed}/{task.total}"),
-        TimeRemainingColumn(),
+        *_COLUMNS,
         console=console,
+        auto_refresh=True,
+        refresh_per_second=10,
+        # Route raw stdout/stderr through the Live context so anything that
+        # bypasses Rich still appears above the bars rather than tearing them.
+        redirect_stdout=True,
+        redirect_stderr=True,
+        transient=False,
     )
-    epoch_task = progress.add_task(description, total=total_epochs)
-    return progress, epoch_task
+
+    fit_task = progress.add_task("[green]Fit", total=total_epochs, extra="")
+    epoch_task = progress.add_task("[cyan]Epoch", total=steps_per_epoch, extra="")
+
+    return TrainingProgress(progress=progress, fit_task=fit_task, epoch_task=epoch_task)

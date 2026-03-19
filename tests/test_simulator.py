@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
+from mach3sbitools.utils import from_feather
 from mach3sbitools.simulator.simulator import Simulator
 
 
@@ -73,7 +74,7 @@ def test_simulate_x_is_non_negative_integer(simulator):
 
 def test_simulate_x_mean_close_to_one(simulator):
     """Poisson(1) has mean=1 and variance=1. Check within 3 sigma."""
-    n_sims = 2000
+    n_sims = 20000
     _, x = simulator.simulate(n_sims)
 
     # Standard error of the mean for Poisson(1) over n_sims samples
@@ -95,3 +96,16 @@ def test_simulate_x_variance_close_to_one(simulator):
     assert np.all(np.abs(col_vars - 1.0) < 0.15), (
         f"Some bin variances are far from expected 1.0: {col_vars}"
     )
+
+
+def test_save(simulator, tmp_path):
+    n_sims = 10
+    x, t = simulator.simulate(n_sims)
+
+    data_file = tmp_path / "data.feather"
+    simulator.save(data_file, t, x)
+
+    assert data_file.exists()
+
+    x, t = from_feather(data_file, simulator.prior.prior_data.parameter_names.tolist())
+    assert len(x) == len(t) == 10

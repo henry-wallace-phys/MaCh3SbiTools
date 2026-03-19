@@ -48,7 +48,7 @@ _SIMULATOR_OPTIONS = [
     nuisance_par_opt,
     click.option(
         "--cyclical_pars",
-        "-s",
+        "--cy",
         multiple=True,
         help="Parameter name patterns (fnmatch-style) that should use a cyclical sinusoidal prior over [-2π, 2π].",
     ),
@@ -172,14 +172,8 @@ _TRAINING_OPTIONS = [
         type=int,
     ),
     click.option(
-        "--show_progress_bar",
-        help="Show a global epoch progress bar (recommended for interactive/Jupyter use).",
-        is_flag=True,
-        default=False,
-    ),
-    click.option(
-        "--show_epoch_progress",
-        help="Show a per-epoch step progress bar (recommended for interactive/Jupyter use).",
+        "--show_progress",
+        help="Show two-level fit/epoch progress bars (works in CLI and Jupyter).",
         is_flag=True,
         default=False,
     ),
@@ -328,7 +322,10 @@ def save_data(
 
 @cli.command("train", short_help="Train the NPE density estimator.")
 @click.option(
-    "--save-dir", "-s", help="Directory to write model checkpoints to.", required=True
+    "--save_file",
+    "-s",
+    help="Base name of file to save model to. Checkpoints will use this.",
+    required=True,
 )
 @click.option(
     "--dataset",
@@ -341,7 +338,7 @@ def save_data(
 @apply_options(_MODEL_OPTIONS)
 @apply_options(_TRAINING_OPTIONS)
 def train(
-    save_dir: Path,
+    save_file: Path,
     prior_path: Path,
     dataset: Path,
     nuisance_pars: list[str] | None,
@@ -365,8 +362,7 @@ def train(
     print_interval: int,
     tensorboard_dir: Path,
     scheduler_patience: int,
-    show_progress_bar: bool,
-    show_epoch_progress: bool,
+    show_progress: bool,
     compile_model: bool,
 ):
     """Train a Neural Posterior Estimation (NPE) density estimator.
@@ -399,7 +395,7 @@ def train(
     )
 
     training_config = TrainingConfig(
-        save_path=save_dir,
+        save_path=save_file,
         batch_size=batch_size,
         learning_rate=learning_rate,
         max_epochs=max_epochs,
@@ -410,10 +406,9 @@ def train(
         resume_checkpoint=resume_checkpoint,
         use_amp=use_amp,
         print_interval=print_interval,
-        show_progress_bar=show_progress_bar,
+        show_progress=show_progress,
         tensorboard_dir=tensorboard_dir,
         scheduler_patience=scheduler_patience,
-        show_epoch_progress=show_epoch_progress,
         compile=compile_model,
         warmup_epochs=warmup_epochs,
         ema_alpha=ema_alpha,
@@ -435,6 +430,9 @@ def train(
     help="Path to a saved density estimator checkpoint (.pt).",
 )
 @click.option(
+    "--save_file", "-s", help="Where to save the inference result to.", required=True
+)
+@click.option(
     "--n_samples", "-n", required=True, help="Number of posterior samples to draw."
 )
 @click.option(
@@ -446,9 +444,9 @@ def train(
 @apply_options(_MODEL_OPTIONS)
 @apply_options(_INFERENCE_OPTIONS)
 def inference(
-    posterior_path: Path,
+    posterior: Path,
     prior_path,
-    save_dir,
+    save_file,
     n_samples: int,
     observed_data_file: Path,
     nuisance_pars,
@@ -483,11 +481,11 @@ def inference(
     )
 
     inference_handler = InferenceHandler(prior_path, nuisance_pars)
-    inference_handler.load_posterior(posterior_path, posterior_config)
+    inference_handler.load_posterior(posterior, posterior_config)
 
     parameter_names = inference_handler.prior.prior_data.parameter_names
     observed_data = pq.read_table(observed_data_file)
     samples = inference_handler.sample_posterior(n_samples, observed_data).cpu()
 
     data_table = pd.DataFrame({p: samples[:, i] for i, p in enumerate(parameter_names)})
-    pq.write_table(data_table, save_dir)
+    pq.write_table(data_table, save_file)

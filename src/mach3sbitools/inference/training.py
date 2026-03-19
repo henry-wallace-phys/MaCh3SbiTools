@@ -7,7 +7,6 @@ scheduling, EMA-based early stopping, AMP support, and periodic checkpointing.
 """
 
 import time
-from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,8 +22,11 @@ from mach3sbitools.exceptions import (
     SBITrainingException,
     ScalarNotSpecified,
 )
+from contextlib import nullcontext
+
+
 from mach3sbitools.utils.config import TrainingConfig
-from mach3sbitools.utils.logger import create_progress, get_logger
+from mach3sbitools.utils.logger import TrainingProgress, create_progress, get_logger
 
 from .tensorboard_writer import TensorBoardWriter
 
@@ -47,12 +49,7 @@ def save_checkpoint(
     """
     Serialise a full training checkpoint to disk.
 
-    The checkpoint dict contains model weights, optimiser state, both
-    scheduler states, the gradient scaler, and training metadata — enough
-    to resume training exactly.
-
-    :param epoch: Current epoch number (written into the filename when
-        *use_unique_path* is ``True``).
+    :param epoch: Current epoch number.
     :param density_estimator: The density estimator module to save.
     :param optimizer: Current optimiser.
     :param warmup_scheduler: Linear warm-up scheduler.
@@ -60,12 +57,9 @@ def save_checkpoint(
     :param scaler: AMP gradient scaler.
     :param best_val_loss: Best EMA validation loss seen so far.
     :param epochs_no_improve: Current early-stopping counter.
-    :param save_path: Base file path. The epoch number is appended when
-        *use_unique_path* is ``True``.
-    :param training_config: Optionally embed the :class:`~mach3sbitools.utils.TrainingConfig`
-        in the checkpoint for provenance.
-    :param use_unique_path: If ``True`` (default), append ``_epoch{N}`` to
-        the stem of *save_path* to avoid overwriting previous checkpoints.
+    :param save_path: Base file path.
+    :param training_config: Optionally embed the config for provenance.
+    :param use_unique_path: Append ``_epoch{N}`` to the stem when ``True``.
     """
     ckpt = {
         "epoch": epoch,
@@ -82,10 +76,14 @@ def save_checkpoint(
     }
 
     ckpt_path = (
-        save_path.with_stem(f"{save_path.stem}_epoch{epoch}")
+        save_path.parent / "checkpoints" / f"{save_path.stem}_epoch{epoch}.ckpt"
         if use_unique_path
         else save_path
     )
+    # Just make sure we can save checkpoint files
+    if use_unique_path:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
     torch.save(ckpt, ckpt_path)
     logger.debug(f"Autosaved checkpoint → [cyan]{ckpt_path}[/]")
 
@@ -106,13 +104,9 @@ class SBITrainer:
 
     def __init__(self, dataset: TensorDataset, config: TrainingConfig, device: str):
         """
-        Initialise the trainer and build DataLoaders.
-
-        :param dataset: Pre-loaded :class:`~torch.utils.data.TensorDataset`
-            of ``(theta, x)`` pairs.
+        :param dataset: Pre-loaded ``(theta, x)`` :class:`~torch.utils.data.TensorDataset`.
         :param config: Training hyperparameters.
-            See :class:`~mach3sbitools.utils.TrainingConfig`.
-        :param device: PyTorch device string (e.g. ``"cuda"`` or ``"cpu"``).
+        :param device: PyTorch device string.
         """
         self.device = device
         self.device_type = device.split(":")[0]
@@ -135,15 +129,8 @@ class SBITrainer:
     # ── Init helpers ──────────────────────────────────────────────────────────
 
     def _init_tensorboard(self) -> TensorBoardWriter | None:
-        """
-        Initialise TensorBoard logging if a log directory is configured.
-
-        :returns: A :class:`~mach3sbitools.inference.tensorboard_writer.TensorBoardWriter`,
-            or ``None`` if ``config.tensorboard_dir`` is unset.
-        """
         if self.config.tensorboard_dir is None:
             return None
-
         tb_dir = Path(self.config.tensorboard_dir)
         tb_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"TensorBoard logging → [cyan]{tb_dir}[/]")
@@ -153,15 +140,6 @@ class SBITrainer:
     def _build_dataloaders(
         self, dataset: TensorDataset
     ) -> tuple[DataLoader, DataLoader]:
-        """
-        Split *dataset* into train/val subsets and build DataLoaders.
-
-        Uses ``config.validation_fraction`` for the split, pinned memory when
-        data is on CPU, and persistent workers when ``num_workers > 0``.
-
-        :param dataset: Source dataset.
-        :returns: Tuple of ``(train_loader, val_loader)``.
-        """
         n_val = int(len(dataset) * self.config.validation_fraction)
         n_train = len(dataset) - n_val
 
@@ -214,16 +192,10 @@ class SBITrainer:
         """
         Run the full training loop.
 
-        Trains for up to ``config.max_epochs`` epochs, applying EMA early
-        stopping and saving periodic checkpoints. Returns the model restored
-        to its best-validation-loss state.
-
-        :param density_estimator: The network to train (built by ``sbi``).
-        :param optimizer: Optional pre-built optimiser. Defaults to
-            :class:`~torch.optim.Adam` with ``config.learning_rate``.
-        :param resume_checkpoint: Path to a checkpoint file from which to
-            restore model weights, optimiser state, and scheduler state.
-        :returns: The density estimator at its best validation loss.
+        :param density_estimator: The network to train.
+        :param optimizer: Optional pre-built optimiser (defaults to Adam).
+        :param resume_checkpoint: Path to a checkpoint to resume from.
+        :returns: The density estimator restored to its best validation loss.
         :raises DensityEstimatorError: If *density_estimator* is ``None``.
         """
         density_estimator = self._maybe_compile(density_estimator)
@@ -243,23 +215,31 @@ class SBITrainer:
         self.best_state = self._clone_state(density_estimator)
         self.ema_val_loss = float("inf")
 
-        progress, epoch_task = create_progress(
-            show_epoch=self.config.show_epoch_progress,
-            total_epochs=self.config.max_epochs - (start_epoch - 1),
-            description=f"Training (epoch {start_epoch}→{self.config.max_epochs})",
+        tp = create_progress(
+            total_epochs=self.config.max_epochs,
+            steps_per_epoch=len(self.train_loader),
+            show_progress=self.config.show_progress,
         )
 
-        with progress:
-            for epoch in range(start_epoch, self.config.max_epochs + 1):
-                t0 = time.perf_counter()
+        # `tp` is either a TrainingProgress or a nullcontext — both are used
+        # as context managers, but only TrainingProgress has a `.progress`.
+        progress_ctx = tp.progress if isinstance(tp, TrainingProgress) else tp
 
-                train_loss = self._train_one_epoch(density_estimator)
+        with progress_ctx:
+            for epoch in range(start_epoch, self.config.max_epochs + 1):
+                if isinstance(tp, TrainingProgress):
+                    tp.start_epoch(
+                        epoch, self.config.max_epochs, len(self.train_loader)
+                    )
+
+                t0 = time.perf_counter()
+                train_loss = self._train_one_epoch(density_estimator, tp)
                 val_loss = self._validate(density_estimator)
                 elapsed = time.perf_counter() - t0
 
                 self.ema_val_loss = (
                     val_loss
-                    if self.ema_val_loss is None
+                    if self.ema_val_loss == float("inf")
                     else self.config.ema_alpha * val_loss
                     + (1 - self.config.ema_alpha) * self.ema_val_loss
                 )
@@ -273,12 +253,12 @@ class SBITrainer:
                 self._update_best_state(density_estimator)
                 self._maybe_save(epoch, density_estimator)
 
+                if isinstance(tp, TrainingProgress):
+                    tp.finish_epoch(train_loss, val_loss)
+
                 if self.epochs_no_improve >= self.config.stop_after_epochs:
                     logger.warning(f"Early stopping at epoch {epoch}")
                     break
-
-                if epoch_task and not isinstance(progress, nullcontext):
-                    progress.update(task_id=epoch_task, advance=1)
 
         if self.best_state:
             density_estimator.load_state_dict(self.best_state)
@@ -291,14 +271,17 @@ class SBITrainer:
 
     # ── Training internals ────────────────────────────────────────────────────
 
-    def _train_one_epoch(self, model: nn.Module) -> float:
+    def _train_one_epoch(
+        self,
+        model: nn.Module,
+        tp: TrainingProgress | nullcontext,
+    ) -> float:
         """
         Run one full pass over the training set.
 
         :param model: The density estimator.
+        :param tp: Active :class:`TrainingProgress` (or nullcontext).
         :returns: Mean training loss for the epoch.
-        :raises OptimizerNotSpecified: If the optimiser has not been set.
-        :raises ScalarNotSpecified: If the AMP scaler has not been set.
         """
         model.train()
         total_loss = 0.0
@@ -326,6 +309,9 @@ class SBITrainer:
             self.scaler.update()
 
             total_loss += loss.detach().item()
+
+            if isinstance(tp, TrainingProgress):
+                tp.step_batch()
 
         return total_loss / len(self.train_loader)
 
@@ -356,16 +342,12 @@ class SBITrainer:
     # ── State management ──────────────────────────────────────────────────────
 
     def _set_best_state(self, model: nn.Module) -> None:
-        """Record *model* as the new best and reset the no-improvement counter."""
         self.best_val_loss = self.ema_val_loss
         self.best_state = self._clone_state(model)
         self.epochs_no_improve = 0
 
     def _update_best_state(self, model: nn.Module) -> None:
-        """Update best state if the current EMA validation loss is lower."""
-        if self.best_val_loss is None:
-            self._set_best_state(model)
-        elif self.ema_val_loss < self.best_val_loss:
+        if self.best_val_loss is None or self.ema_val_loss < self.best_val_loss:
             self._set_best_state(model)
         else:
             self.epochs_no_improve += 1
@@ -373,15 +355,6 @@ class SBITrainer:
     def _resume_if_requested(
         self, model: nn.Module, resume_checkpoint: Path | None
     ) -> int:
-        """
-        Load checkpoint state into all components and return the start epoch.
-
-        :param model: The density estimator to restore weights into.
-        :param resume_checkpoint: Path to checkpoint, or ``None`` to start fresh.
-        :returns: Epoch number to start training from.
-        :raises OptimizerNotSpecified: If the optimiser is not initialised.
-        :raises SBITrainingException: If schedulers are not initialised.
-        """
         if not resume_checkpoint:
             return 1
 
@@ -411,12 +384,6 @@ class SBITrainer:
     # ── Scheduler helpers ─────────────────────────────────────────────────────
 
     def _build_schedulers(self) -> tuple[LinearLR, ReduceLROnPlateau]:
-        """
-        Construct the warm-up and plateau learning-rate schedulers.
-
-        :returns: Tuple of ``(warmup_scheduler, plateau_scheduler)``.
-        :raises OptimizerNotSpecified: If the optimiser is not initialised.
-        """
         if self.optimizer is None:
             raise OptimizerNotSpecified("Optimizer not provided")
 
@@ -437,15 +404,6 @@ class SBITrainer:
         return warmup, plateau
 
     def _step_schedulers(self, epoch: int) -> None:
-        """
-        Advance the appropriate scheduler for the current epoch.
-
-        Uses the warm-up scheduler during the warm-up phase, then hands over
-        to the plateau scheduler.
-
-        :param epoch: Current epoch number.
-        :raises SBITrainingException: If schedulers are not initialised.
-        """
         if self.warmup is None or self.plateau is None:
             raise SBITrainingException("Schedulers not provided")
 
@@ -459,7 +417,6 @@ class SBITrainer:
     def _log_epoch(
         self, epoch: int, train_loss: float, val_loss: float, elapsed: float
     ) -> None:
-        """Log a one-line training summary for *epoch*."""
         if self.optimizer is None:
             raise OptimizerNotSpecified("Optimizer not provided")
 
@@ -472,7 +429,6 @@ class SBITrainer:
     def _log_tensorboard(
         self, epoch: int, train_loss: float, val_loss: float, elapsed: float
     ) -> None:
-        """Write scalars to TensorBoard for *epoch* (no-op if writer is absent)."""
         if not self.writer:
             return
         if self.optimizer is None:
@@ -493,16 +449,6 @@ class SBITrainer:
     # ── Checkpoint saving ─────────────────────────────────────────────────────
 
     def _maybe_save(self, epoch: int, model: nn.Module) -> None:
-        """
-        Save checkpoints according to the configured schedule.
-
-        Saves a best-model checkpoint whenever validation improves
-        (``epochs_no_improve == 0``) and a periodic autosave every
-        ``config.autosave_every`` epochs.
-
-        :param epoch: Current epoch number.
-        :param model: Current density estimator state.
-        """
         if not self.config.save_path:
             return
         if self.optimizer is None:
@@ -543,19 +489,9 @@ class SBITrainer:
 
     @staticmethod
     def _clone_state(model: nn.Module) -> dict[str, Any]:
-        """Return a CPU copy of *model*'s state dict."""
         return {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
     def _maybe_compile(self, model: nn.Module) -> Any:
-        """
-        Optionally compile *model* with ``torch.compile``.
-
-        Falls back to the original model if compilation is unavailable.
-
-        :param model: The model to (maybe) compile.
-        :returns: The compiled model, or the original if compilation is
-            disabled or fails.
-        """
         if not self.config.compile:
             return model
         try:

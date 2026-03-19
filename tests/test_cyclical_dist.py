@@ -111,3 +111,41 @@ def test_sample_ks(cyclical_distribution):
     )
 
     assert result.pvalue > 0.001
+
+
+def test_against_mc(cyclical_distribution):
+    """
+    Compare samples from CyclicalDistribution against a simple
+    accept-reject Monte Carlo sampler using the true PDF.
+    """
+    n_samples = 50_000
+    lower, upper = -2 * np.pi, 2 * np.pi
+    M = 0.5 / np.pi  # max of the PDF
+
+    accepted = []
+
+    # Generate MC samples via accept-reject
+    while len(accepted) < n_samples:
+        x = np.random.uniform(lower, upper, size=n_samples)
+        y = np.random.uniform(0, M, size=n_samples)
+
+        pdf_vals = (
+            cyclical_distribution.pdf(torch.tensor(x, dtype=torch.double).unsqueeze(-1))
+            .squeeze()
+            .numpy()
+        )
+
+        accepted.extend(x[y < pdf_vals])
+
+    accepted = np.array(accepted[:n_samples])
+
+    # Samples from your implementation
+    samples = cyclical_distribution.sample(torch.Size([n_samples])).squeeze().numpy()
+
+    # --- Compare distributions ---
+    assert abs(samples.mean() - accepted.mean()) < 0.05
+
+    assert abs(samples.var() - accepted.var()) < 0.1
+
+    ks_result = kstest(samples, accepted)
+    assert ks_result.pvalue > 0.01
