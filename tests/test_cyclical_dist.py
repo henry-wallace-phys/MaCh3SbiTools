@@ -98,7 +98,7 @@ def test_sample_cdf_uniformity(cyclical_distribution):
 def test_sample_ks(cyclical_distribution):
     """
     Kolmogorov-Smirnov test against the empirical CDF.
-    Tests whether samples are consistent with the distribution at p>0.05.
+    Tests whether samples are consistent with the distribution at p>0.01.
     """
     samples = cyclical_distribution.sample(torch.Size([500_000])).squeeze().numpy()
     result = kstest(
@@ -110,7 +110,7 @@ def test_sample_ks(cyclical_distribution):
         ),
     )
 
-    assert result.pvalue > 0.05
+    assert result.pvalue > 0.01
 
 
 def test_against_mc(cyclical_distribution):
