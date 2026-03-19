@@ -1,6 +1,6 @@
 <a name="MaCh3 SBI Tools"></a>
 
-[<img src="docs/%20mach3sbi_logo.png">]("https://github.com/henry-wallace-phys/MaCh3SbiTools" alt="repo link")
+<img src="dosc/mach3sbi_logo.png" alt="MaCh3" align="center" width="100"/>
 
 <div align="center">
 <a href="https://www.gnu.org/licenses/gpl-3.0" > 
