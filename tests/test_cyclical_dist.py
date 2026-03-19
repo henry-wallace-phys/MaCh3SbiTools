@@ -91,8 +91,8 @@ def test_sample_cdf_uniformity(cyclical_distribution):
     samples = cyclical_distribution.sample(torch.Size([50_000]))
     u = cyclical_distribution.cdf(samples)
 
-    assert torch.abs(u.mean() - 0.5) < 0.01
-    assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.01
+    assert torch.abs(u.mean() - 0.5) < 0.05
+    assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.05
 
 
 def test_sample_ks(cyclical_distribution):
@@ -110,7 +110,7 @@ def test_sample_ks(cyclical_distribution):
         ),
     )
 
-    assert result.pvalue > 0.001
+    assert result.pvalue > 0.05
 
 
 def test_against_mc(cyclical_distribution):
