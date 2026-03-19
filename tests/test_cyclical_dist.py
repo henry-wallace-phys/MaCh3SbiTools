@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import torch
-from scipy.stats import kstest
+from scipy.stats import ks_2samp  # ← correct two-sample function
 
 from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistribution
 
@@ -94,40 +94,58 @@ def test_sample_cdf_uniformity(cyclical_distribution):
     assert torch.abs(u.mean() - 0.5) < 0.05
     assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.05
 
-
 def test_against_mc(cyclical_distribution):
     """
-    Compare samples from CyclicalDistribution against a simple
-    accept-reject Monte Carlo sampler using the true PDF.
+    Compare samples from CyclicalDistribution against an accept-reject
+    Monte Carlo reference using the true PDF.
+
+    Robustness improvements vs. the naive version:
+      - Fixed RNG seeds make the test deterministic.
+      - Mean / variance tolerances are derived from the CLT (5-sigma), so
+        they scale correctly with n and the distribution's own spread.
+      - ks_2samp is used explicitly for the two-sample KS test.
     """
+    rng = np.random.default_rng(42)
+    torch.manual_seed(42)
+
     n_samples = 50_000
     lower, upper = -2 * np.pi, 2 * np.pi
-    M = 0.5 / np.pi  # max of the PDF
+    M = 0.5 / np.pi  # uniform envelope (= max of the PDF)
 
-    accepted = []
-
-    # Generate MC samples via accept-reject
+    # --- Build reference via accept-reject ---
+    accepted: list[float] = []
     while len(accepted) < n_samples:
-        x = np.random.uniform(lower, upper, size=n_samples)
-        y = np.random.uniform(0, M, size=n_samples)
-
+        batch = 2 * n_samples
+        x = rng.uniform(lower, upper, size=batch)
+        y = rng.uniform(0, M, size=batch)
         pdf_vals = (
-            cyclical_distribution.pdf(torch.tensor(x, dtype=torch.double).unsqueeze(-1))
+            cyclical_distribution.pdf(
+                torch.tensor(x, dtype=torch.double).unsqueeze(-1)
+            )
             .squeeze()
             .numpy()
         )
+        accepted.extend(x[y < pdf_vals].tolist())
 
-        accepted.extend(x[y < pdf_vals])
-
-    accepted = np.array(accepted[:n_samples])
-
-    # Samples from your implementation
+    ref = np.array(accepted[:n_samples])
     samples = cyclical_distribution.sample(torch.Size([n_samples])).squeeze().numpy()
 
-    # --- Compare distributions ---
-    assert abs(samples.mean() - accepted.mean()) < 0.05
+    # --- CLT-derived mean tolerance (5-sigma) ---
+    # Under H₀: (mean_s - mean_r) ~ N(0, (σ_s² + σ_r²) / n)
+    mean_tol = 5 * np.sqrt((samples.var() + ref.var()) / n_samples)
+    assert abs(samples.mean() - ref.mean()) < mean_tol, (
+        f"Means differ by {abs(samples.mean() - ref.mean()):.4f}, "
+        f"tolerance {mean_tol:.4f}"
+    )
 
-    assert abs(samples.var() - accepted.var()) < 0.1
+    # --- CLT-derived variance tolerance (5-sigma) ---
+    # Var of sample variance estimator ~ 2σ⁴ / (n−1)
+    var_tol = 5 * samples.var() ** 2 * np.sqrt(2 / (n_samples - 1))
+    assert abs(samples.var() - ref.var()) < var_tol, (
+        f"Variances differ by {abs(samples.var() - ref.var()):.4f}, "
+        f"tolerance {var_tol:.4f}"
+    )
 
-    ks_result = kstest(samples, accepted)
-    assert ks_result.pvalue > 0.01
+    # --- Two-sample KS test ---
+    ks_stat, p_value = ks_2samp(samples, ref)
+    assert p_value > 0.05, f"KS test failed: stat={ks_stat:.4f}, p={p_value:.4f}"
