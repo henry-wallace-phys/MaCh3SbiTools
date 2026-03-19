@@ -1,6 +1,6 @@
 <a name="MaCh3 SBI Tools"></a>
 
-<img src="dosc/mach3sbi_logo.png" alt="MaCh3" align="center" width="100"/>
+<img src="docs/mach3sbi_logo.png" alt="MaCh3" align="center" width="100"/>
 
 <div align="center">
 <a href="https://www.gnu.org/licenses/gpl-3.0" > 
