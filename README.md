@@ -29,7 +29,9 @@ conda develop .
 ```
 
 ## Tutorials
-to be added
+* For install information see the [install guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/installation.html)
+* For simulator set up information see the [simulator guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/building_simulator.html)
+* For CLI information see the [cli guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/cli.html)
 
 ## References
 [1] Boelts, J. et al. (2025). sbi reloaded: a toolkit for simulation-based inference workflows. Journal of Open Source Software, 10(108), 7754. https://doi.org/10.21105/joss.07754
