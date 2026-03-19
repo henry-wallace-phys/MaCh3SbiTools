@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from mach3sbitools.utils import from_feather
 from mach3sbitools.simulator.simulator import Simulator
+from mach3sbitools.utils import from_feather
 
 
 @pytest.fixture

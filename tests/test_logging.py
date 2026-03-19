@@ -12,11 +12,11 @@ Covers:
 """
 
 from contextlib import nullcontext
+
 import pytest
 from rich.progress import Progress
 
 from mach3sbitools.utils.logger import TrainingProgress, create_progress
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
