@@ -137,8 +137,8 @@ def test_against_mc(cyclical_distribution):
         f"tolerance {mean_tol:.4f}"
     )
 
-    # --- CLT-derived variance tolerance (5-sigma) ---
-    # Var of sample variance estimator ~ 2σ⁴ / (n-1)
+    # --- CLT-derived variance tolerance (5 sigma) ---
+    # Var of sample variance estimator ~ 2σ⁴ / (n - 1)
     var_tol = 5 * samples.var() ** 2 * np.sqrt(2 / (n_samples - 1))
     assert abs(samples.var() - ref.var()) < var_tol, (
         f"Variances differ by {abs(samples.var() - ref.var()):.4f}, "
