@@ -9,6 +9,7 @@ wheels/
 *.venv*
 notebooks/*logs*
 sbi-logs
+*_build*
 
 # Virtual environments
 .venv

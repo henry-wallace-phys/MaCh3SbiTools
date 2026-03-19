@@ -1,6 +1,0 @@
-/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sbi/inference/trainers/npe/npe_base.py:177: UserWarning: Data x has device 'cuda:0'. Moving x to the data_device 'cuda'. Training will proceed on device 'cuda'.
-  theta, x = validate_theta_and_x(
-/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/sbi/inference/trainers/npe/npe_base.py:177: UserWarning: Parameters theta has device 'cuda:0'. Moving theta to the data_device 'cuda'. Training will proceed on device 'cuda'.
-  theta, x = validate_theta_and_x(
-/scratch/henryi/venvs/.venv_sbi/lib/python3.11/site-packages/numpy/lib/_histograms_impl.py:897: RuntimeWarning: invalid value encountered in divide
-  return n / db / n.sum(), bin_edges
