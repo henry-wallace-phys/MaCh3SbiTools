@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "2.0.0"
+version = "2.1.0"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,10 +13,55 @@ dependencies = [
     "ipykernel",
     "ipywidgets",
     "click",
-    "arrow"
-    "pynvml"
+    "pyarrow",
+    "scipy-stubs~=1.17.1",
+    "arviz",
+    "rich"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "sphinx"
+]
+
+docs = [
+    "sphinx",
+    "sphinx-click==4.4.0", # OLD VERSION NEEDED
+    "sphinx-autodoc-typehints>=2.3.0",
+    "furo"
 ]
 
 [project.scripts]
-sample_mach3 = "mach3sbitools.apps.__main_sample_mach3__:main"
-build_posterior = "mach3sbitools.apps.__main_build_posterior__:main"
+mach3sbi = "mach3sbitools.apps.main_cli:cli"
+
+[tool.pytest.ini_options]
+addopts = "-v --tb=short --cov=mach3sbitools tests/  --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["mach3sbitools"]
+omit = ["tests/*", "scripts/*"]
+
+# * See https://docs.astral.sh/ruff/rules/ for details on Ruff's linting options
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # check for errors using PyFlakes
+    "I",    # best practices for import calls
+    "UP",   # suggestions for code modernization
+    "RUF",  # build in Ruff warnings
+    "R",    # refactoring suggestions
+]
+ignore = [
+    "E501", # Don't enforce line lengths within a linting context
+]
+allowed-confusables = ["σ"] # We need sigmas
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
