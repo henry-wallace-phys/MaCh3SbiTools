@@ -79,8 +79,6 @@ def test_simulate_x_mean_close_to_one(simulator):
 
     # Standard error of the mean for Poisson(1) over n_sims samples
     expected_mean = 1.0
-    sem = np.sqrt(expected_mean / n_sims)
-
     col_means = x.mean(axis=0)
     assert np.all(np.abs(col_means - expected_mean) < 0.05), (
         f"Some bin means are >3σ from expected 1.0: {col_means}"
