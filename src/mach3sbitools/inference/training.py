@@ -7,6 +7,7 @@ scheduling, EMA-based early stopping, AMP support, and periodic checkpointing.
 """
 
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,9 +23,6 @@ from mach3sbitools.exceptions import (
     SBITrainingException,
     ScalarNotSpecified,
 )
-from contextlib import nullcontext
-
-
 from mach3sbitools.utils.config import TrainingConfig
 from mach3sbitools.utils.logger import TrainingProgress, create_progress, get_logger
 
