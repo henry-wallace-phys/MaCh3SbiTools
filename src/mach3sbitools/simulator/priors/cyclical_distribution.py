@@ -72,7 +72,7 @@ class CyclicalDistribution(torch.distributions.Distribution):
 
         Computed analytically as :math:`\\int p(x)\\,x^2\\,dx` over ``[-2π, 2π]``.
         """
-        return torch.Tensor([5.16947])
+        return torch.Tensor([4*(np.pi**2 - 6)/3])
 
     def pdf(self, theta: torch.Tensor) -> torch.Tensor:
         """
