@@ -94,6 +94,7 @@ def test_sample_cdf_uniformity(cyclical_distribution):
     assert torch.abs(u.mean() - 0.5) < 0.05
     assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.05
 
+
 def test_against_mc(cyclical_distribution):
     """
     Compare samples from CyclicalDistribution against an accept-reject
@@ -119,9 +120,7 @@ def test_against_mc(cyclical_distribution):
         x = rng.uniform(lower, upper, size=batch)
         y = rng.uniform(0, M, size=batch)
         pdf_vals = (
-            cyclical_distribution.pdf(
-                torch.tensor(x, dtype=torch.double).unsqueeze(-1)
-            )
+            cyclical_distribution.pdf(torch.tensor(x, dtype=torch.double).unsqueeze(-1))
             .squeeze()
             .numpy()
         )
@@ -139,7 +138,7 @@ def test_against_mc(cyclical_distribution):
     )
 
     # --- CLT-derived variance tolerance (5-sigma) ---
-    # Var of sample variance estimator ~ 2σ⁴ / (n−1)
+    # Var of sample variance estimator ~ 2σ⁴ / (n-1)
     var_tol = 5 * samples.var() ** 2 * np.sqrt(2 / (n_samples - 1))
     assert abs(samples.var() - ref.var()) < var_tol, (
         f"Variances differ by {abs(samples.var() - ref.var()):.4f}, "
