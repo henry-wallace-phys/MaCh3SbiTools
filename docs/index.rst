@@ -14,7 +14,7 @@ MaCh3 SBI TOOLS
       :target: https://henry-wallace-phys.github.io/MaCh3SbiTools
       :alt: Code - Documented
 
-   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pytest.yml/badge.svg?branch=main
+   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pytest.yml/badge.svg
       :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pytest.yml
       :alt: unit tests
 
