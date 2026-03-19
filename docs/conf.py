@@ -71,8 +71,9 @@ autodoc_type_aliases = {
     "Style": "rich.style.Style",
 }
 
-bibtex_bibfiles = ['bibliography.bib']
-bibtex_default_style = 'unsrt'  # numbered, in order of citation
+bibtex_bibfiles = ["bibliography.bib"]
+bibtex_default_style = "unsrt"  # numbered, in order of citation
+
 
 def autodoc_skip_member(app, what, name, obj, skip, options):
     """Skip members not defined in mach3sbitools."""
