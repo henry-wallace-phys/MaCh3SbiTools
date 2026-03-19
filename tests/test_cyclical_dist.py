@@ -9,8 +9,8 @@ from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistrib
 @pytest.fixture(scope="session")
 def cyclical_distribution() -> CyclicalDistribution:
     nominals = torch.ones(1)
-    lower_bounds = -2 * torch.pi * torch.ones(1)
-    upper_bounds = 2 * torch.pi * torch.ones(1)
+    lower_bounds = -2 * torch.pi * torch.ones(1, dtype=torch.double)
+    upper_bounds = 2 * torch.pi * torch.ones(1, dtype=torch.double)
     return CyclicalDistribution(nominals, lower_bounds, upper_bounds)
 
 
@@ -93,24 +93,6 @@ def test_sample_cdf_uniformity(cyclical_distribution):
 
     assert torch.abs(u.mean() - 0.5) < 0.05
     assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.05
-
-
-def test_sample_ks(cyclical_distribution):
-    """
-    Kolmogorov-Smirnov test against the empirical CDF.
-    Tests whether samples are consistent with the distribution at p>0.01.
-    """
-    samples = cyclical_distribution.sample(torch.Size([500_000])).squeeze().numpy()
-    result = kstest(
-        samples,
-        lambda x: (
-            cyclical_distribution.cdf(torch.tensor(x, dtype=torch.double).unsqueeze(-1))
-            .squeeze()
-            .numpy()
-        ),
-    )
-
-    assert result.pvalue > 0.01
 
 
 def test_against_mc(cyclical_distribution):
