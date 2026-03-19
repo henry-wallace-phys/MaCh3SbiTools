@@ -89,7 +89,7 @@ def test_simulate_x_mean_close_to_one(simulator):
 
 def test_simulate_x_variance_close_to_one(simulator):
     """Poisson(1) has variance=1. Check within reasonable tolerance."""
-    n_sims = 2000
+    n_sims = 200000
     _, x = simulator.simulate(n_sims)
 
     col_vars = x.var(axis=0)
