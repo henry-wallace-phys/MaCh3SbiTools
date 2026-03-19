@@ -9,6 +9,18 @@ project = "mach3sbitools"
 author = "Henry Wallace"
 release = get_version("mach3sbitools")
 version = release
+html_logo = "_static/mach3sbi_logo.png"
+html_theme_options = {
+    "sidebar_hide_name": True,  # hides the text name since logo replaces it
+    "light_logo": "mach3sbi_logo.png",
+    "dark_logo": "mach3sbi_logo.png",  # optional, if you have a dark variant
+}
+
+html_theme_options = {
+    "sidebar_hide_name": True,
+    "light_logo": "mach3sbi_logo.png",
+    "logo_url": "https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main",
+}
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -16,6 +28,8 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
     "sphinx_click",
+    "sphinxcontrib.bibtex",
+    "sphinx.ext.mathjax",
 ]
 # Suppress warnings from third-party packages
 suppress_warnings = [
@@ -56,6 +70,9 @@ autodoc_default_options = {
 autodoc_type_aliases = {
     "Style": "rich.style.Style",
 }
+
+bibtex_bibfiles = ["bibliography.bib"]
+bibtex_default_style = "unsrt"  # numbered, in order of citation
 
 
 def autodoc_skip_member(app, what, name, obj, skip, options):
