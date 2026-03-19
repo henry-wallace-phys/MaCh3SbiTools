@@ -1,7 +1,10 @@
 ---
 name: ruff-lint
 on:
-  push
+  pull_request:
+    branches:
+      - main
+      - develop
 
 jobs:
   build:
