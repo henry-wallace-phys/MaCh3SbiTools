@@ -9,8 +9,8 @@ from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistrib
 @pytest.fixture(scope="session")
 def cyclical_distribution() -> CyclicalDistribution:
     nominals = torch.ones(1)
-    lower_bounds = -2 * torch.pi * torch.ones(1, dtype=torch.double)
-    upper_bounds = 2 * torch.pi * torch.ones(1, dtype=torch.double)
+    lower_bounds = -2 * torch.pi * torch.ones(1)
+    upper_bounds = 2 * torch.pi * torch.ones(1)
     return CyclicalDistribution(nominals, lower_bounds, upper_bounds)
 
 
