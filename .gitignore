@@ -19,3 +19,8 @@ sbi-logs
 *.err
 *.pkl
 *.pdf
+
+*.DS_Store
+*.coverage
+*.idea
+uv.lock
