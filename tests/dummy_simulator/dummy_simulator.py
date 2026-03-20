@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 
@@ -17,8 +18,8 @@ class DummySimulator:
     def n_params(self):
         return THETA_DIM
 
-    def simulate(self, theta: Sequence[float]) -> Sequence[float]:
-        return np.ones(X_DIM)
+    def simulate(self, _: Sequence[float]) -> Sequence[float]:
+        return cast(Sequence[float], np.ones(X_DIM).tolist())
 
     def get_parameter_names(self) -> Sequence[str]:
         return [f"theta_{i}" for i in range(THETA_DIM)]
@@ -28,7 +29,7 @@ class DummySimulator:
         return i < 3
 
     def get_data_bins(self) -> Sequence[float]:
-        return np.ones(X_DIM)
+        return cast(Sequence[float], np.ones(X_DIM).tolist())
 
     def get_parameter_bounds(self) -> BoundaryConditions:
         lower = -5 * np.ones(THETA_DIM)
@@ -42,13 +43,13 @@ class DummySimulator:
         lower[:3] = 0.0
         upper[:3] = 2.0
 
-        return lower, upper
+        return cast(BoundaryConditions, (lower.tolist(), upper.tolist()))
 
     def get_parameter_nominals(self) -> Sequence[float]:
-        return np.ones(THETA_DIM)
+        return cast(Sequence[float], np.ones(THETA_DIM).tolist())
 
     def get_parameter_errors(self) -> Sequence[float]:
-        return np.ones(THETA_DIM)
+        return cast(Sequence[float], np.ones(THETA_DIM).tolist())
 
     def get_covariance_matrix(self) -> np.ndarray:
         return np.identity(THETA_DIM, dtype=np.float32)

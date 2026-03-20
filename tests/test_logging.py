@@ -26,11 +26,15 @@ from mach3sbitools.utils.logger import TrainingProgress, create_progress
 @pytest.fixture()
 def tp() -> TrainingProgress:
     """A TrainingProgress built with show_progress=True."""
-    return create_progress(
+    progress = create_progress(
         total_epochs=100,
         steps_per_epoch=50,
         show_progress=True,
     )
+    if not isinstance(progress, TrainingProgress):
+        raise TypeError(f"Expected TrainingProgress but got {type(progress)}")
+
+    return progress
 
 
 # ---------------------------------------------------------------------------

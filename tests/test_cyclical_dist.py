@@ -114,7 +114,7 @@ def test_against_mc(cyclical_distribution):
     M = 0.5 / np.pi  # uniform envelope (= max of the PDF)
 
     # --- Build reference via accept-reject ---
-    accepted: list[float] = []
+    accepted = []
     while len(accepted) < n_samples:
         batch = 2 * n_samples
         x = rng.uniform(lower, upper, size=batch)

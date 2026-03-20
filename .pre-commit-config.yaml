@@ -2,24 +2,61 @@ repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+    -   id: trailing-whitespace
+-   repo: https://github.com/asottile/pyupgrade
+    rev: v1.25.0
+    hooks:
+    -   id: pyupgrade
+        args: [--py36-plus]
+
+
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
     -   id: check-yaml
     -   id: end-of-file-fixer
     -   id: trailing-whitespace
--   repo: https://github.com/psf/black
-    rev: 26.3.1
-    hooks:
-    -   id: black
+    -   id: no-commit-to-branch
+        args: [--branch, main]
+
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version.
     rev: v0.15.7
     hooks:
       # Run the linter.
       - id: ruff-check
+        name: "Ruff Linter"
         args: [ --fix ]
+
       # Run the formatter.
       - id: ruff-format
+        name: "Ruff Formatter"
         types_or: [ python, pyi ]
+
 -   repo: https://github.com/pre-commit/mirrors-mypy
     rev: 'v1.19.1'  # Use the sha / tag you want to point at
     hooks:
     - id: mypy
+      name: "Type Checker"
+
+-   repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        name: "Secret checker"
+
+-   repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.25
+    hooks:
+      - id: validate-pyproject
+        additional_dependencies: ["validate-pyproject[extra]"]
+
+-   repo: https://github.com/hukkin/mdformat
+    rev: 0.7.21
+    hooks:
+      - id: mdformat
+        name: "Format markdown"
+        additional_dependencies:
+          - mdformat-gfm          # GitHub-Flavored Markdown support
+          - mdformat-ruff         # Python code formatting
+          - mdformat-frontmatter  # YAML frontmatter support
+          - ruff                  # Required for mdformat-ruff
