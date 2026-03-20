@@ -1,9 +1,12 @@
 ---
-name: mypy-typecheck
+name: pre-commit
 on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - "*"
 
 jobs:
   build:
@@ -12,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.11", "3.12", "3.13" ]
+        python-version: [3.13]
 
     steps:
       - uses: actions/checkout@v5
@@ -20,7 +23,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
       - name: Display Python version
         run: python -c "import sys; print(sys.version)"
 
@@ -29,5 +31,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install ".[dev]"
 
-      - name: Run mypy
-        run: mypy src/
+      - name: Run pre-commit hooks
+        uses: pre-commit/action@v3.0.1
