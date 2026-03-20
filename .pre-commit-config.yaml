@@ -60,3 +60,9 @@ repos:
           - mdformat-ruff         # Python code formatting
           - mdformat-frontmatter  # YAML frontmatter support
           - ruff                  # Required for mdformat-ruff
+
+-   repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+        name: "lint commits"
