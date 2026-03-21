@@ -27,3 +27,10 @@ sbi-logs
 *.coverage
 *.idea
 uv.lock
+
+# Let's not save the SBI information from tutorial
+tutorial/data
+tutorial/prior
+tutorial/models
+tutorial/observations
+tutorial/my_simulator
