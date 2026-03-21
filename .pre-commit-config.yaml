@@ -59,3 +59,9 @@ repos:
           - mdformat-ruff         # Python code formatting
           - mdformat-frontmatter  # YAML frontmatter support
           - ruff                  # Required for mdformat-ruff
+
+-   repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        args: ['--extra-keys=metadata.celltoolbar cell.metadata.heading_collapsed']

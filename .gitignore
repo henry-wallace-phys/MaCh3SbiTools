@@ -19,6 +19,9 @@ sbi-logs
 *.err
 *.pkl
 *.pdf
+*.feather
+*.arrow
+*.paraket
 
 *.DS_Store
 *.coverage

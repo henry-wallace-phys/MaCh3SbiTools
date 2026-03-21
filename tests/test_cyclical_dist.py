@@ -9,24 +9,7 @@ from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistrib
 @pytest.fixture(scope="session")
 def cyclical_distribution() -> CyclicalDistribution:
     nominals = torch.ones(1)
-    lower_bounds = -2 * torch.pi * torch.ones(1)
-    upper_bounds = 2 * torch.pi * torch.ones(1)
-    return CyclicalDistribution(nominals, lower_bounds, upper_bounds)
-
-
-def test_cyclical_bound_error():
-    nominals = torch.tensor([1, 1])
-    lower_bounds = torch.tensor([0, -2 * torch.pi])
-    upper_bounds = 2 * torch.pi * torch.ones(2)
-    # Check lower bounds wrong
-    with pytest.raises(NotImplementedError):
-        CyclicalDistribution(nominals, lower_bounds, upper_bounds)
-
-    # Check upper bounds wrong
-    lower_bounds = -2 * torch.pi * torch.ones(2)
-    upper_bounds = torch.tensor([1, 2 * torch.pi])
-    with pytest.raises(NotImplementedError):
-        CyclicalDistribution(nominals, lower_bounds, upper_bounds)
+    return CyclicalDistribution(nominals)
 
 
 def test_log_prob(cyclical_distribution):

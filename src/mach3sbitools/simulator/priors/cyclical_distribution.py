@@ -10,6 +10,10 @@ import numpy as np
 import torch
 import torch.distributions
 
+# Scalar bounds used internally throughout — only ±2π is supported.
+_LOWER = -2 * torch.pi
+_UPPER = 2 * torch.pi
+
 
 class CyclicalDistribution(torch.distributions.Distribution):
     """
@@ -33,26 +37,17 @@ class CyclicalDistribution(torch.distributions.Distribution):
     def __init__(
         self,
         nominals: torch.Tensor,
-        lower_bounds: torch.Tensor,
-        upper_bounds: torch.Tensor,
     ):
         """
         Construct a :class:`CyclicalDistribution`.
 
         :param nominals: Nominal (centre) values, one per parameter.
-        :param lower_bounds: Lower bounds — must all equal ``-2π``.
-        :param upper_bounds: Upper bounds — must all equal ``+2π``.
         :raises NotImplementedError: If any bound differs from ``±2π``.
         """
         self.nominals = nominals
         self.device = nominals.device
-        self.lower_bounds = lower_bounds
-        self.upper_bounds = upper_bounds
-
-        if any(upper_bounds != 2 * torch.pi) or any(lower_bounds != -2 * torch.pi):
-            raise NotImplementedError(
-                "CyclicalDistribution only supports bounds of [-2π, 2π]."
-            )
+        self.lower_bounds = torch.full((len(nominals),), _LOWER, device=self.device)
+        self.upper_bounds = torch.full((len(nominals),), _UPPER, device=self.device)
 
         super().__init__(
             batch_shape=torch.Size(),
@@ -81,7 +76,8 @@ class CyclicalDistribution(torch.distributions.Distribution):
         :param theta: Input tensor. Values outside ``[-2π, 2π]`` have zero density.
         :returns: PDF values, same shape as *theta*.
         """
-        in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)
+        # Use scalar bounds to avoid broadcasting theta's shape against (n_params,).
+        in_bounds = (theta > _LOWER) & (theta < _UPPER)
         pdf = torch.zeros(theta.shape, dtype=torch.double)
         pdf[in_bounds] = (0.5 / torch.pi) * (
             torch.sin((theta[in_bounds] + 2 * torch.pi) / 4) ** 2
@@ -95,12 +91,13 @@ class CyclicalDistribution(torch.distributions.Distribution):
         :param theta: Input tensor.
         :returns: CDF values in ``[0, 1]``, same shape as *theta*.
         """
+        # Use scalar bounds to avoid broadcasting theta's shape against (n_params,).
+        in_bounds = (theta > _LOWER) & (theta < _UPPER)
         cdf = torch.zeros(theta.shape, dtype=torch.double)
-        in_bounds = (theta > self.lower_bounds) & (theta < self.upper_bounds)
         cdf[in_bounds] = (0.5 / torch.pi) * (
             theta[in_bounds] / 2 + torch.sin(theta[in_bounds] / 2) + torch.pi
         )
-        cdf[theta > self.upper_bounds] = 1.0
+        cdf[theta >= _UPPER] = 1.0
         return cdf
 
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
@@ -113,10 +110,10 @@ class CyclicalDistribution(torch.distributions.Distribution):
         :returns: Log-density values, same shape as *value*.
         """
         pdf = self.pdf(value)
-        in_bounds = torch.abs(pdf) > 1e-8
-        pdf[in_bounds] = torch.log(pdf[in_bounds])
-        pdf[~in_bounds] = -np.inf
-        return pdf
+        in_bounds = pdf > 1e-8
+        log_p = torch.full(pdf.shape, -np.inf, dtype=torch.double)
+        log_p[in_bounds] = torch.log(pdf[in_bounds])
+        return log_p
 
     def _build_cdf_grid(
         self, n_points: int = 10_000
@@ -128,8 +125,8 @@ class CyclicalDistribution(torch.distributions.Distribution):
         :returns: Tuple of ``(theta_grid, cdf_grid)`` tensors.
         """
         theta_grid = torch.linspace(
-            -2 * torch.pi,
-            2 * torch.pi,
+            _LOWER,
+            _UPPER,
             n_points,
             dtype=torch.double,
             device=self.device,
@@ -180,16 +177,19 @@ class CyclicalDistribution(torch.distributions.Distribution):
             *n* independent samples.
         :returns: Sampled tensor of shape ``(*sample_shape, event_size)``.
         """
-        if not sample_shape:
-            n_samples = 1
-        elif isinstance(sample_shape, torch.Size):
-            n_samples = sample_shape.numel()
-        else:
-            n_samples = len(sample_shape)
+        # Use numel() so that multi-dimensional sample shapes (e.g. [a, b])
+        # produce the correct total count rather than just taking len().
+        sample_shape = torch.Size(sample_shape)
+        n_samples = int(sample_shape.numel()) if sample_shape else 1
 
         theta_grid, cdf_grid = self._build_cdf_grid()
         u = self._sample_uniform_cdf(
             n_samples, cdf_min=cdf_grid[0], cdf_max=cdf_grid[-1]
         )
         samples = self._invert_cdf(u, theta_grid, cdf_grid)
-        return samples.squeeze(0) if not sample_shape else samples
+
+        return (
+            samples.squeeze(0)
+            if not sample_shape
+            else samples.reshape(*sample_shape, len(self.nominals))
+        )

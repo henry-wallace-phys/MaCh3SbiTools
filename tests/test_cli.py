@@ -7,6 +7,8 @@ Business logic is tested elsewhere.
 
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pandas as pd
 import pytest
 from click.testing import CliRunner
 
@@ -20,19 +22,24 @@ def runner():
 
 @pytest.fixture()
 def tmp_files(tmp_path):
-    """Minimal real files needed for click.Path(exists=True) checks."""
     config = tmp_path / "config.yaml"
     prior = tmp_path / "prior.pkl"
     checkpoint = tmp_path / "best.pt"
     observed = tmp_path / "observed.parquet"
     data_dir = tmp_path / "sims"
     inference = tmp_path / "inference"
+
     config.touch()
     prior.touch()
     checkpoint.touch()
-    observed.touch()
     data_dir.mkdir()
     inference.mkdir()
+
+    # Must have a "data" column — matches pq.read_table(...)["data"] in inference cmd
+    pd.DataFrame({"data": np.random.poisson(10, size=50).astype(float)}).to_parquet(
+        observed
+    )
+
     return {
         "config": config,
         "prior": prior,
@@ -242,15 +249,18 @@ def test_train_config_forwarded(mock_handler_cls, runner, tmp_files):
 # ---------------------------------------------------------------------------
 
 
-@patch("mach3sbitools.apps.main_cli.pq")
-@patch("mach3sbitools.apps.main_cli.pd")
+@patch("mach3sbitools.apps.main_cli.pairplot")
 @patch("mach3sbitools.apps.main_cli.InferenceHandler")
-def test_inference_runs(mock_handler_cls, mock_pd, mock_pq, runner, tmp_files):
+def test_inference_runs(mock_handler_cls, mock_pairplot, runner, tmp_files):
     mock_handler = MagicMock()
-    mock_handler.prior.prior_data.parameter_names = ["p1"]
-    mock_handler.sample_posterior.return_value = MagicMock(
-        cpu=MagicMock(return_value=MagicMock())
+    mock_handler.prior.prior_data.parameter_names = np.array(["p1"])
+
+    # Shape must be (n_samples, len(parameter_names)) — here (100, 1)
+    fake_samples = np.random.randn(100, 1)
+    mock_handler.sample_posterior.return_value.cpu.return_value.numpy.return_value = (
+        fake_samples
     )
+
     mock_handler_cls.return_value = mock_handler
 
     result = runner.invoke(
@@ -262,7 +272,7 @@ def test_inference_runs(mock_handler_cls, mock_pd, mock_pq, runner, tmp_files):
             "-r",
             str(tmp_files["prior"]),
             "-s",
-            str(tmp_files["inference"]),
+            str(tmp_files["inference"] / "samples.parquet"),  # ← file, not dir
             "-n",
             "100",
             "-o",

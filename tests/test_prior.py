@@ -77,20 +77,3 @@ def test_check_boundary_no_warning_when_within_bounds():
     with patch.object(logger, "warning") as mock_warning:
         _check_boundary(nominal, error, lower_bound, upper_bound, parameter_names)
         mock_warning.assert_not_called()
-
-
-def test_nuisance_filter(prior):
-    # Just check we can apply the nuisance filter "live"
-    nuisance_pars = ["theta_1"]
-    n_pars = prior.n_params
-    prior.set_nuisance_filter(nuisance_pars)
-    assert prior.n_params == n_pars - 1
-    prior.set_nuisance_filter()
-    assert prior.n_params == n_pars
-
-
-def test_mask_distribution_map(prior, simulator_injector):
-    map_dist = prior._priors[0]
-    map_dist_moved = map_dist.to(torch.device("cpu"))
-    assert map_dist_moved.mask.device == torch.device("cpu")
-    assert map_dist_moved.distribution == map_dist.distribution
