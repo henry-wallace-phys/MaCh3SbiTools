@@ -3,7 +3,6 @@ from pathlib import Path
 
 import numpy as np
 import yaml
-from scipy import special
 
 from mach3sbitools.utils import get_logger
 
@@ -58,9 +57,14 @@ class SampleHandler:
             self._base_energy_modes,
         )
 
+        self.parameter_handler.set_parameter_values(
+            self.parameter_handler.nominal_values
+        )
+        self.reweight()
+
         if not self.samples.data:
             # This is fine, we can get it from the spectra
-            self.data = np.array([len(m) for m in self.mc.binned_events])
+            self.data = self.mc.get_weighted_hist()
         else:
             if (
                 len(self.samples.data) != len(self.samples.bins) - 1
@@ -69,11 +73,6 @@ class SampleHandler:
             self.data = np.array(self.samples.data)
 
         self.n_bins = len(self.data)  # fix: set after self.data is finalised
-
-        # Precompute the constant term of the Poisson log-likelihood.
-        # data is fixed for the lifetime of this object, so gammaln(data + 1)
-        # never changes between reweights — no need to recompute it each step.
-        self._gammaln_data = special.gammaln(self.data + 1)
 
         logger.info("Sample handler initialised from %s", sample_config_file)
 
@@ -90,7 +89,7 @@ class SampleHandler:
     def get_likelihood(self):
         mc_vals = self.get_mc_vals()
         mc_safe = np.clip(mc_vals, 1e-10, None)
-        return np.sum(self.data * np.log(mc_safe) - mc_safe - self._gammaln_data)
+        return np.sum(self.data * (1 - np.log(self.data / mc_safe)) - mc_safe)
 
     def get_data(self):
         return self.data

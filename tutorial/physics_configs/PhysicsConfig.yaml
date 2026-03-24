@@ -16,7 +16,7 @@ Parameters:
       # Gaussian parameter 1
       name: gaussian_param_1
       is_flat: False
-      nominal: 0
+      nominal: 1
       error: 1
       modes: [0]
       bounds: [0, 10]
@@ -41,8 +41,8 @@ Parameters:
       # This parameter will eventually be cyclical!
       name: cyclical_param
       is_flat: True
-      sin_weight: True
-      nominal: 0
+      cos_weight: True
+      nominal: 1
       modes: [0, 1]
       error: 3.141
       bounds: [-3.1415926, 3.1415926]

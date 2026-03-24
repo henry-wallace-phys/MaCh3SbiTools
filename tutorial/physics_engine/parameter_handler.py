@@ -22,7 +22,7 @@ class Parameter:
     modes: list[int]
     energy_range: tuple[float, float]
     correlations: dict[str, float] = field(default_factory=dict)
-    sin_weight: bool = False
+    cos_weight: bool = False
 
     def __post_init__(self):
         # Just check we're nicely within bounds
@@ -64,15 +64,22 @@ class ParameterHandler:
         self.covariance_matrix = self._build_covariance_matrix()
 
         self.nominal_values = np.array(
-            [self.get_nominal(i) for i in range(self.n_params)]
+            [self.get_nominal(i) for i in range(self.n_params)], dtype=float
         )
 
-        self.parameter_values = np.array([p.nominal for p in self.parameters])
+        self.parameter_values = np.array(
+            [p.nominal for p in self.parameters], dtype=float
+        )
+        self.parameter_weights = self.parameter_values.copy()
 
-        self._sin_mask = np.array([p.sin_weight for p in self.parameters])
+        self._cos_mask = np.array([p.cos_weight for p in self.parameters])
         self._non_flat_idx = np.array(
             [not self.get_is_flat(i) for i in range(self.n_params)]
         )
+
+        # Pre-compute bounds arrays for vectorised OOB check
+        self._lower_bounds = np.array([p.bounds[0] for p in self.parameters])
+        self._upper_bounds = np.array([p.bounds[1] for p in self.parameters])
 
         # For "physics"
         self.rng = np.random.default_rng(seed)
@@ -96,15 +103,19 @@ class ParameterHandler:
             raise ValueError(
                 f"{len(new_values)} values are not equal to {self.n_params}"
             )
-        self.parameter_values = new_values.copy()
+        np.copyto(self.parameter_values, new_values)  # in-place, no allocation
 
     def get_parameter_values(self):
-        return self.parameter_values
+        return self.parameter_values.view()  # zero-copy read-only view
 
     def get_parameter_weights(self):
-        weights = self.get_parameter_values()
-        weights[self._sin_mask] = np.sin(weights[self._sin_mask]) ** 2
-        return weights
+        np.copyto(
+            self.parameter_weights, self.parameter_values
+        )  # one in-place copy into pre-allocated buffer
+        self.parameter_weights[self._cos_mask] = (
+            np.cos(self.parameter_weights[self._cos_mask] / 2) ** 2
+        )
+        return self.parameter_weights
 
     # ---------------------------------------------------------
     # "Physics" Utilities to make this handle a bit like MaCh3
@@ -112,11 +123,9 @@ class ParameterHandler:
     def throw_params(self, about: np.ndarray | None = None):
         """
         Throw parameter values about a point
-        :param n_throws: Number of throws
         :param about: Place to throw about
         :return:
         """
-
         param_throw = self.rng.multivariate_normal(
             mean=np.zeros(self.n_params),
             cov=self.covariance_matrix,
@@ -146,9 +155,9 @@ class ParameterHandler:
                     f"About shape {about.shape}  !=  Parameter shape {self.parameter_values.shape}"
                 )
 
-        if any(self._get_oob(about)):
+        if self._get_oob(about):
             return -np.inf
-        return self.distribution.logpdf(about[self._non_flat_idx])
+        return -1 * self.distribution.logpdf(about[self._non_flat_idx])
 
     # ------------------------------------------------
     # Getters
@@ -208,7 +217,6 @@ class ParameterHandler:
         covariance_matrix = np.zeros((self.n_params, self.n_params))
 
         for i, par_i in enumerate(self.parameters):
-            # No correlations so we can skip
             for j, par_j in enumerate(self.parameters[i:], start=i):
                 if i == j:
                     covariance_matrix[i, j] = par_i.error**2
@@ -222,7 +230,7 @@ class ParameterHandler:
     @classmethod
     def _get_covariance(cls, par_i: Parameter, par_j: Parameter):
         """
-        Get the covariance matrix between two parameters
+        Get the covariance between two parameters
 
         :param par_i: Parameter 1
         :param par_j: Parameter 2
@@ -244,10 +252,6 @@ class ParameterHandler:
 
         return par_i.correlations[par_j.name] * par_i.error * par_j.error
 
-    def _get_oob(self, about: np.ndarray) -> np.ndarray:
-        return np.array(
-            [
-                (about[i] < p.bounds[0]) | (about[i] > p.bounds[1])
-                for i, p in enumerate(self.parameters)
-            ]
-        )
+    def _get_oob(self, about: np.ndarray) -> np.bool:
+        # Short-circuits on first violated bound rather than checking all
+        return np.any(about < self._lower_bounds) or np.any(about > self._upper_bounds)

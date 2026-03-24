@@ -36,6 +36,8 @@ repos:
     hooks:
     - id: mypy
       name: "Type Checker"
+      additional_dependencies:
+        - types-PyYAML
 
 -   repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1

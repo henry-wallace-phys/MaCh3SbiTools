@@ -83,7 +83,6 @@ class EventSpectra:
         Equivalent to calling :meth:`reweight` with an array of ones, but
         more explicit about intent.
         """
-        logger.debug("Resetting weights")
         self.weights = np.ones(len(self.energies), dtype=float)
 
     def apply_weight(
@@ -105,7 +104,8 @@ class EventSpectra:
     def get_weighted_hist(self) -> np.ndarray:
         n_bins = len(self.energy_bins) - 1
         return np.array(
-            [self.weights[self._bin_indices == i].sum() for i in range(n_bins)]
+            [self.weights[self._bin_indices == i].sum() for i in range(n_bins)],
+            dtype=float,
         )
 
 
