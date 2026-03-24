@@ -461,6 +461,9 @@ def train(
         num_bins=num_bins,
     )
 
+    save_file = Path(save_file)
+    save_file.parent.mkdir(parents=True, exist_ok=True)
+
     training_config = TrainingConfig(
         save_path=save_file,
         batch_size=batch_size,
@@ -569,6 +572,8 @@ def inference(
         logger.warning("Found %s, deleting", save_file)
         save_file.unlink()
 
+    save_file.parent.mkdir(parents=True, exist_ok=True)
+
     logger = get_logger()
 
     # PosteriorConfig is recovered from the checkpoint — the caller does not
@@ -577,11 +582,12 @@ def inference(
     inference_handler.load_posterior(posterior, posterior_config=None)
 
     parameter_names = inference_handler.prior.prior_data.parameter_names
+    logger.info(parameter_names)
     observed_data = np.array(pq.read_table(observed_data_file)["data"])
 
     samples = inference_handler.sample_posterior(n_samples, observed_data).cpu().numpy()
 
-    pairplot(samples, labels=parameter_names)
+    pairplot(samples, labels=[[p] for p in parameter_names])
     plt.savefig(save_file.with_suffix(".pdf"))
 
     data_table = Table.from_pydict(
