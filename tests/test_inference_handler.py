@@ -49,6 +49,7 @@ def samples(trained_handler, nominal_observation):
 
 
 # ── Setup / guard tests ────────────────────────────────────────────────────────
+@pytest.mark.slow
 def test_no_dataset_load(prior_save):
     """load_training_data should raise if set_dataset was never called."""
     handler = InferenceHandler(prior_save)
@@ -56,6 +57,7 @@ def test_no_dataset_load(prior_save):
         handler.load_training_data()
 
 
+@pytest.mark.slow
 def test_no_posterior_train_without_create(prior_save, dummy_data_dir, training_config):
     """train_posterior should raise if create_posterior was never called."""
     handler = InferenceHandler(prior_save)
@@ -65,12 +67,14 @@ def test_no_posterior_train_without_create(prior_save, dummy_data_dir, training_
         handler.train_posterior(training_config)
 
 
+@pytest.mark.slow
 def test_set_dataset(prior_save, dummy_data_dir):
     handler = InferenceHandler(prior_save)
     handler.set_dataset(dummy_data_dir)
     assert handler.dataset is not None
 
 
+@pytest.mark.slow
 def test_load_training_data(prior_save, dummy_data_dir):
     handler = InferenceHandler(prior_save)
     handler.set_dataset(dummy_data_dir)
@@ -78,6 +82,7 @@ def test_load_training_data(prior_save, dummy_data_dir):
     assert handler._tensor_dataset is not None
 
 
+@pytest.mark.slow
 def test_create_posterior(prior_save, dummy_data_dir, posterior_config):
     handler = InferenceHandler(prior_save)
     handler.set_dataset(dummy_data_dir)

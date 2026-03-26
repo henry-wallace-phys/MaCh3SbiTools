@@ -249,6 +249,7 @@ def test_train_config_forwarded(mock_handler_cls, runner, tmp_files):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 @patch("mach3sbitools.apps.main_cli.pairplot")
 @patch("mach3sbitools.apps.main_cli.InferenceHandler")
 def test_inference_runs(mock_handler_cls, mock_pairplot, runner, tmp_files):

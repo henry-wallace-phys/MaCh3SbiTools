@@ -78,6 +78,7 @@ def _minimal_config(tmp_path: Path, **kwargs) -> TrainingConfig:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 class TestSaveCheckpoint:
     def test_saves_checkpoint_file(self, tmp_path):
         model = _tiny_model()
@@ -138,6 +139,7 @@ class TestSaveCheckpoint:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 class TestSBITrainerErrors:
     def test_raises_density_estimator_error_when_none(self, tmp_path):
         """Covers line 225 — DensityEstimatorError when model is None."""
@@ -213,6 +215,7 @@ class TestSBITrainerErrors:
             trainer._build_schedulers()
 
 
+@pytest.mark.slow
 class TestSBITrainerCompile:
     def test_compile_false_returns_model_unchanged(self, tmp_path):
         """Covers _maybe_compile with compile=False (line 528)."""
@@ -239,6 +242,7 @@ class TestSBITrainerTensorboard:
         trainer = SBITrainer(_tiny_dataset(), cfg, device="cpu")
         assert trainer.writer is not None
 
+    @pytest.mark.slow
     def test_log_tensorboard_skips_when_no_writer(self, tmp_path):
         cfg = _minimal_config(tmp_path, tensorboard_dir=None)
         trainer = SBITrainer(_tiny_dataset(), cfg, device="cpu")
@@ -258,6 +262,7 @@ class TestSBITrainerTensorboard:
             trainer._log_tensorboard(1, 1.0, 1.0, 1.0)
 
 
+@pytest.mark.slow
 class TestSBITrainerFullRun:
     def test_trains_for_two_epochs(self, tmp_path):
         """End-to-end smoke test: 2 epochs, no tensorboard, no AMP."""
@@ -336,6 +341,7 @@ class TestSBITrainerFullRun:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 class TestInferenceHandlerErrors:
     def test_load_posterior_raises_file_not_found(self, prior_save):
         """Covers FileNotFoundError in load_posterior (line 259)."""
