@@ -34,7 +34,8 @@ tutorial/prior
 tutorial/models
 tutorial/observations
 tutorial/my_simulator
-*my_simulator.py*
+tutorial/my_simulator/my_simulator.py
+
 
 *jupyter_tutorial*
 *tensor-logs*
