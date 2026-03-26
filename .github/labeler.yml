@@ -16,7 +16,7 @@ Apps:
 DataLoading:
   - changed-files:
       - any-glob-to-any-file:
-          - src/mach3sbitools/apps/**
+          - src/mach3sbitools/data_loaders/**
 
 Diagnostics:
   - changed-files:
