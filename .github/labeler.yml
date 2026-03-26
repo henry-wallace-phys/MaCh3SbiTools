@@ -16,7 +16,7 @@ Apps:
 DataLoading:
   - changed-files:
       - any-glob-to-any-file:
-          - src/mach3sbitools/data_loaders/**
+          - src/mach3sbitools/apps/**
 
 Diagnostics:
   - changed-files:
@@ -47,7 +47,7 @@ TypesAndExceptions:
 CI/CD:
   - changed-files:
       - any-glob-to-any-file:
-          - .github/**
+          - .github/**Wait
           - .pre-commit-config.yaml
 
 Pyproject:
