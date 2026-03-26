@@ -21,44 +21,6 @@ class MySimulator:
         sample_config = self._get_sample_yaml(config_path)
         self.sample_handler = SampleHandler(sample_config, self.parameter_handler)
 
-    def simulate(self, theta):
-        self.parameter_handler.set_parameter_values(theta)
-        self.sample_handler.reweight()
-        return self.sample_handler.get_mc_vals()
-
-    def get_parameter_names(self):
-        return [
-            self.parameter_handler.get_name(p)
-            for p in range(self.parameter_handler.n_params)
-        ]
-
-    def get_parameter_bounds(self):
-        lower = []
-        upper = []
-        for p in range(self.parameter_handler.n_params):
-            lo, up = self.parameter_handler.get_bounds(p)
-            lower.append(lo)
-            upper.append(up)
-        return lower, upper
-
-    def get_parameter_nominals(self):
-        return self.parameter_handler.nominal_values
-
-    def get_parameter_errors(self):
-        return [
-            self.parameter_handler.get_error(i)
-            for i in range(self.parameter_handler.n_params)
-        ]
-
-    def get_covariance_matrix(self):
-        return self.parameter_handler.covariance_matrix
-
-    def get_is_flat(self, i: int):
-        return self.parameter_handler.get_is_flat(i)
-
-    def get_data_bins(self):
-        return self.sample_handler.get_data()
-
     # Helper method
     @classmethod
     def _get_sample_yaml(cls, physics_config: Path):

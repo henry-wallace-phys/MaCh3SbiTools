@@ -121,7 +121,9 @@ class Prior(torch.distributions.Distribution):
             ]
             cyclical_mask = self.device_handler.to_tensor(cyclical_mask_)
         else:
-            cyclical_mask = torch.zeros(n_params, dtype=torch.bool, device=self.device_handler.device)
+            cyclical_mask = torch.zeros(
+                n_params, dtype=torch.bool, device=self.device_handler.device
+            )
 
         if any(cyclical_mask):
             self._prior_data[self._nuisance_filter].lower_bounds[cyclical_mask] = (
@@ -163,7 +165,9 @@ class Prior(torch.distributions.Distribution):
         """
         if nuisance_patterns is None:
             n_pars = len(self._prior_data.parameter_names)
-            return torch.ones(n_pars, dtype=torch.bool, device=self.device_handler.device)
+            return torch.ones(
+                n_pars, dtype=torch.bool, device=self.device_handler.device
+            )
 
         keep = [
             not any(fnmatch.fnmatch(p, n) for n in nuisance_patterns)
@@ -244,16 +248,23 @@ class Prior(torch.distributions.Distribution):
         :raises RuntimeError: If Gaussian rejection sampling does not converge.
         """
         sample_shape = torch.Size(sample_shape)
-        samples = torch.empty((*sample_shape, self.n_params), dtype=torch.double, device=self.device_handler.device)
+        samples = torch.empty(
+            (*sample_shape, self.n_params),
+            dtype=torch.double,
+            device=self.device_handler.device,
+        )
 
         for mask_map in self._priors:
             if isinstance(mask_map.distribution, MultivariateNormal):
                 lb = self.prior_data.lower_bounds[mask_map.mask]
                 ub = self.prior_data.upper_bounds[mask_map.mask]
-                remaining = torch.ones(sample_shape, dtype=torch.bool, device=self.device_handler.device)
+                remaining = torch.ones(
+                    sample_shape, dtype=torch.bool, device=self.device_handler.device
+                )
                 out = torch.empty(
-                    (*sample_shape, int(mask_map.mask.sum())), dtype=torch.double,
-                    device=self.device_handler.device
+                    (*sample_shape, int(mask_map.mask.sum())),
+                    dtype=torch.double,
+                    device=self.device_handler.device,
                 )
                 for _ in range(10_000):
                     if not remaining.any():
