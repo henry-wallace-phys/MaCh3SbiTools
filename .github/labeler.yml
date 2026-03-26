@@ -40,4 +40,4 @@ CI/CD:
 
 Pyproject:
   - changed-files:
-      - any-glob-to-any-file: ['pyproject.toml']Thi
+      - any-glob-to-any-file: ['pyproject.toml']
