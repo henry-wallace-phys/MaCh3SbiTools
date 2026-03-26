@@ -157,7 +157,7 @@ class ParameterHandler:
 
         if self._get_oob(about):
             return -np.inf
-        return -1 * self.distribution.logpdf(about[self._non_flat_idx])
+        return self.distribution.logpdf(about[self._non_flat_idx])
 
     # ------------------------------------------------
     # Getters

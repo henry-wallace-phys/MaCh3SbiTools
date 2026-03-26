@@ -3,6 +3,6 @@ SampleSettings:
   #       230,  145,  129,   88,   52,   35,   20,   14]
 
   BinningInfo:
-    low: 0
-    high: 10
+    low: 1
+    high: 5
     n_bins: 20

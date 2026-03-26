@@ -109,7 +109,7 @@ class _PoissonLogLikeOp(Op):
         sh = self._handlers.sh
         ph.set_parameter_values(theta.astype(float))
         sh.reweight()
-        loglike = sh.get_likelihood()
+        loglike = sh.get_log_likelihood()
         # Must be a 0-d ndarray — pytensor rejects plain scalars
         outputs[0][0] = np.array(
             loglike if np.isfinite(loglike) else -1e30,

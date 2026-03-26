@@ -50,7 +50,7 @@ class SampleHandler:
         self.parameter_handler = parameter_handler
 
         # Will give us some nice data events, modes
-        self._base_energy_spectra, self._base_energy_modes = generate_events(10_000)
+        self._base_energy_spectra, self._base_energy_modes = generate_events(1000)
         self.mc = EventSpectra(
             np.array(self.samples.bins),
             self._base_energy_spectra,
@@ -86,7 +86,7 @@ class SampleHandler:
             par_modes = par_info.enum_mode if par_info.enum_mode else None
             self.mc.apply_weight(par_val, e_low, e_high, par_modes)
 
-    def get_likelihood(self):
+    def get_log_likelihood(self):
         mc_vals = self.get_mc_vals()
         mc_safe = np.clip(mc_vals, 1e-10, None)
         return np.sum(self.data * (1 - np.log(self.data / mc_safe)) - mc_safe)
