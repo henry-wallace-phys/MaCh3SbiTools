@@ -1,0 +1,24 @@
+# .github/workflows/tag-version.yml
+name: Tag new version
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  tag-new-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # Required! The action needs to compare HEAD with HEAD~1
+
+      - uses: salsify/action-detect-and-tag-new-version@v2
+        with:
+          version-command: |
+            python3 -c "
+            import tomllib
+            with open('pyproject.toml', 'rb') as f:
+                print(tomllib.load(f)['project']['version'])
+            "
