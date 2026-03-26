@@ -1,0 +1,56 @@
+Tests:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - tests/**
+
+Tutorial:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - tutorial/**
+
+Apps:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - src/mach3sbitools/apps/**
+
+DataLoading:
+  -changed-files:
+    -any-hlob-to-any-file:
+      - src/mach3sbitools/apps/**
+
+Diagnostics:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - src/mach3sbitools/diagnostics/**
+
+Inference:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - src/mach3sbitools/inference/**
+
+Simulator:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - src/mach3sbitools/simulator/**
+
+Utils:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - src/mach3sbitools/utils/**
+
+TypesAndExceptions:
+  -changed-files:
+      -any-hlob-to-any-file:
+        - src/mach3sbitools/types.py
+        - src/mach3sbitools/exceptions.py
+
+CI/CD:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - .pre-commit-config.yaml
+
+Pyproject:
+  - changed-files:
+      - any-glob-to-any-file:
+          - pyproject.toml
