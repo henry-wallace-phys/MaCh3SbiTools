@@ -150,6 +150,16 @@ class SimulatorProtocol(Protocol):
         """
         ...
 
+    def get_log_likelihood(self, theta: list[float]) -> float:
+        """
+        For a given theta value, returns the log-likelihood
+
+        :param theta:
+        :return: _description_
+        :rtype: float
+        """
+        ...
+
 
 def _implements(proto: type) -> Callable[[type], type]:
     """

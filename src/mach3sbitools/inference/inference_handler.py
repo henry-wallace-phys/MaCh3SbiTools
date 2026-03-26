@@ -25,12 +25,13 @@ from typing import Any, cast
 import numpy as np
 import torch
 import torch.nn as nn
-from sbi.inference import NPE
+from sbi.inference import NPE, DirectPosterior
 from sbi.neural_nets import posterior_nn
 from torch.utils.data import TensorDataset
 
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
 from mach3sbitools.simulator import load_prior
+from mach3sbitools.types import SimulatorData
 from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
 from mach3sbitools.utils.device_handler import TorchDeviceHandler
 from mach3sbitools.utils.logger import get_logger
@@ -332,3 +333,33 @@ class InferenceHandler:
         self._density_estimator = density_estimator
 
         logger.info(f"Density estimator loaded from [cyan]{checkpoint_path}[/]")
+
+    def get_log_likelihood(
+        self, theta: SimulatorData, x: list[float] | np.ndarray, **kwargs
+    ):
+        """Get the loglikelihood for a model
+
+        :param theta: Input sampled points
+        :param x: Data point
+        :raises ValueError: If you've not trained anything
+        :return: The log-probability for the sampled points
+        """
+        self.build_posterior()
+
+        if self.posterior is None:
+            raise ValueError("Train or load a density estimator first.")
+
+        x_tensor = torch.tensor(
+            np.array([x]), dtype=torch.float32, device=self.device_handler.device
+        )
+
+        theta_tensor = torch.tensor(
+            np.array(theta), dtype=torch.float32, device=self.device_handler.device
+        )
+
+        # It will be this, this just stops mypy complaining!
+        posterior = cast(DirectPosterior, self.posterior)
+
+        return cast(
+            torch.Tensor, posterior.log_prob(theta=theta_tensor, x=x_tensor, **kwargs)
+        )

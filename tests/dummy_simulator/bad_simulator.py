@@ -29,3 +29,9 @@ class PoorlyDefinedSimulator:
 
     def get_corelation_matrix(self) -> np.ndarray:
         return np.identity(self.n_params, dtype=np.float32)
+
+    def get_loglikelihood(self, theta) -> float:
+        np_theta = np.array(theta, dtype=float)
+        np_data = np.array(self.get_data_bins(), dtype=float)
+
+        return float(np.sum(np_data * (1 - np.log(np_data / np_theta)) - np_theta))
