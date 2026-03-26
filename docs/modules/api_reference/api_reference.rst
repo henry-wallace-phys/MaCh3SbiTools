@@ -10,3 +10,4 @@ API Reference
    inference
    data
    utils
+   diagnostics
