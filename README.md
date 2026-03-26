@@ -42,7 +42,7 @@ conda develop .
 - For install information see the [install guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/installation.html)
 - For simulator set up information see the [simulator guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/building_simulator.html)
 - For CLI information see the [cli guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/cli.html)
-- The full tutorial lives in the tutorials folder the Jupyter notebooks are designed to go from
+- The full tutorial lives in the [tutorials directory](https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main/tutorial). The Jupyter notebooks are designed to go from
   physics code all the way your own fully implemented + trained SBI instance
 
 ## References
