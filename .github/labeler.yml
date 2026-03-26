@@ -1,56 +1,43 @@
 Tests:
   - changed-files:
-      - any-glob-to-any-file:
-          - tests/**
+      - any-glob-to-any-file: ['tests/**']
 
 Tutorial:
   - changed-files:
-      - any-glob-to-any-file:
-          - tutorial/**
+      - any-glob-to-any-file: ['tutorial/**']
 
 Apps:
   - changed-files:
-      - any-glob-to-any-file:
-          - src/mach3sbitools/apps/**
+      - any-glob-to-any-file: ['src/mach3sbitools/apps/**']
 
 DataLoading:
   - changed-files:
-      - any-glob-to-any-file:
-          - src/mach3sbitools/apps/**
+      - any-glob-to-any-file: ['src/mach3sbitools/apps/**']
 
 Diagnostics:
   - changed-files:
-      - any-glob-to-any-file:
-          - src/mach3sbitools/diagnostics/**
+      - any-glob-to-any-file: ['src/mach3sbitools/diagnostics/**']
 
 Inference:
   - changed-files:
-      - any-glob-to-any-file:
-          - src/mach3sbitools/inference/**
+      - any-glob-to-any-file: ['src/mach3sbitools/inference/**']
 
 Simulator:
   - changed-files:
-      - any-glob-to-any-file:
-          - src/mach3sbitools/simulator/**
+      - any-glob-to-any-file: ['src/mach3sbitools/simulator/**']
 
 Utils:
   - changed-files:
-      - any-glob-to-any-file:
-          - src/mach3sbitools/utils/**
+      - any-glob-to-any-file: ['src/mach3sbitools/utils/**']
 
 TypesAndExceptions:
   - changed-files:
-      - any-glob-to-any-file:
-          - src/mach3sbitools/types.py
-          - src/mach3sbitools/exceptions.py
+      - any-glob-to-any-file: ['src/mach3sbitools/types.py', 'src/mach3sbitools/exceptions.py']
 
 CI/CD:
   - changed-files:
-      - any-glob-to-any-file:
-          - .github/**Wait
-          - .pre-commit-config.yaml
+      - any-glob-to-any-file: ['.github/**', '.pre-commit-config.yaml']
 
 Pyproject:
   - changed-files:
-      - any-glob-to-any-file:
-          - pyproject.toml
+      - any-glob-to-any-file: ['pyproject.toml']
