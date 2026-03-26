@@ -11,6 +11,10 @@ from mach3sbitools.simulator import Simulator
 def normalise_logl(input_arr: np.ndarray):
     mean = np.mean(input_arr)
     std_dev = np.std(input_arr)
+
+    if std_dev == 0:
+        return np.zeros_like(input_arr)  # ← simplest fix
+
     return (input_arr - mean) / std_dev
 
 
