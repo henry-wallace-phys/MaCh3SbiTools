@@ -33,7 +33,11 @@ class ParaketDataset(Dataset):
         :param nuisance_params: fnmatch patterns for parameters to filter out
             of *theta* on load.
         """
+        if not isinstance(data_folder, Path):
+            data_folder = Path(data_folder)
+
         self.data_folder = data_folder
+
         self.files = sorted(data_folder.glob("*.feather"))
         self.nuisance_params = nuisance_params or None
         self.parameter_names = parameter_names

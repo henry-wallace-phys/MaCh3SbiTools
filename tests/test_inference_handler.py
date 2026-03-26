@@ -49,8 +49,7 @@ def samples(trained_handler, nominal_observation):
 
 
 # ── Setup / guard tests ────────────────────────────────────────────────────────
-
-
+@pytest.mark.slow
 def test_no_dataset_load(prior_save):
     """load_training_data should raise if set_dataset was never called."""
     handler = InferenceHandler(prior_save)
@@ -58,6 +57,7 @@ def test_no_dataset_load(prior_save):
         handler.load_training_data()
 
 
+@pytest.mark.slow
 def test_no_posterior_train_without_create(prior_save, dummy_data_dir, training_config):
     """train_posterior should raise if create_posterior was never called."""
     handler = InferenceHandler(prior_save)
@@ -67,12 +67,14 @@ def test_no_posterior_train_without_create(prior_save, dummy_data_dir, training_
         handler.train_posterior(training_config)
 
 
+@pytest.mark.slow
 def test_set_dataset(prior_save, dummy_data_dir):
     handler = InferenceHandler(prior_save)
     handler.set_dataset(dummy_data_dir)
     assert handler.dataset is not None
 
 
+@pytest.mark.slow
 def test_load_training_data(prior_save, dummy_data_dir):
     handler = InferenceHandler(prior_save)
     handler.set_dataset(dummy_data_dir)
@@ -80,6 +82,7 @@ def test_load_training_data(prior_save, dummy_data_dir):
     assert handler._tensor_dataset is not None
 
 
+@pytest.mark.slow
 def test_create_posterior(prior_save, dummy_data_dir, posterior_config):
     handler = InferenceHandler(prior_save)
     handler.set_dataset(dummy_data_dir)
@@ -88,17 +91,18 @@ def test_create_posterior(prior_save, dummy_data_dir, posterior_config):
     assert handler.inference is not None
 
 
+@pytest.mark.slow
 def test_train(trained_handler):
     assert trained_handler._density_estimator is not None
 
 
 # ── Output shape / type ────────────────────────────────────────────────────────
-
-
+@pytest.mark.slow
 def test_total_samples(samples):
     assert len(samples) == N_SAMPLES
 
 
+@pytest.mark.slow
 def test_samples_shape(samples, trained_handler):
     n_params = trained_handler.prior.n_params
     assert samples.shape == (N_SAMPLES, n_params), (
@@ -106,14 +110,17 @@ def test_samples_shape(samples, trained_handler):
     )
 
 
+@pytest.mark.slow
 def test_samples_are_tensor(samples):
     assert isinstance(samples, torch.Tensor)
 
 
+@pytest.mark.slow
 def test_samples_finite(samples):
     assert torch.all(torch.isfinite(samples)), "Posterior samples contain NaN or Inf"
 
 
+@pytest.mark.slow
 def test_samples_within_prior_bounds(samples, trained_handler):
     lower = trained_handler.prior.prior_data.lower_bounds.cpu()
     upper = trained_handler.prior.prior_data.upper_bounds.cpu()
@@ -125,6 +132,7 @@ def test_samples_within_prior_bounds(samples, trained_handler):
 # ── Posterior quality ──────────────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 def test_posterior_mean_near_nominal(samples, trained_handler):
     """
     The dummy simulator output is independent of theta, so the posterior
@@ -142,6 +150,7 @@ def test_posterior_mean_near_nominal(samples, trained_handler):
     )
 
 
+@pytest.mark.slow
 def test_posterior_is_narrower_than_prior(samples, trained_handler):
     prior_var = trained_handler.prior.variance.cpu()
     posterior_var = samples.cpu().var(dim=0)
@@ -153,6 +162,7 @@ def test_posterior_is_narrower_than_prior(samples, trained_handler):
     )
 
 
+@pytest.mark.slow
 def test_posterior_reproducible_with_same_seed(trained_handler, nominal_observation):
     torch.manual_seed(42)
     samples_a = trained_handler.sample_posterior(100, nominal_observation)
@@ -168,6 +178,7 @@ def test_posterior_reproducible_with_same_seed(trained_handler, nominal_observat
 # ── Checkpoint / save-load ─────────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 def test_save_and_load_posterior(
     trained_handler, tmp_path, prior_save, posterior_config, nominal_observation
 ):
@@ -205,6 +216,7 @@ def test_save_and_load_posterior(
         )
 
 
+@pytest.mark.slow
 def test_x_dtype_matches_training(trained_handler, nominal_observation):
     """
     The dtype of the observation passed to sample_posterior must match
@@ -219,6 +231,7 @@ def test_x_dtype_matches_training(trained_handler, nominal_observation):
     )
 
 
+@pytest.mark.slow
 def test_x_shape_matches_training(trained_handler, nominal_observation):
     """
     The shape of a single observation must match the x event_shape

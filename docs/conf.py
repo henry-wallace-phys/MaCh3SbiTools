@@ -10,17 +10,14 @@ author = "Henry Wallace"
 release = get_version("mach3sbitools")
 version = release
 html_logo = "_static/mach3sbi_logo.png"
-html_theme_options = {
-    "sidebar_hide_name": True,  # hides the text name since logo replaces it
-    "light_logo": "mach3sbi_logo.png",
-    "dark_logo": "mach3sbi_logo.png",  # optional, if you have a dark variant
-}
 
 html_theme_options = {
     "sidebar_hide_name": True,
-    "light_logo": "mach3sbi_logo.png",
-    "logo_url": "https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main",
+    "source_repository": "https://github.com/henry-wallace-phys/MaCh3SbiTools",
+    "source_branch": "main",
+    "source_directory": "docs/",
 }
+
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -32,19 +29,10 @@ extensions = [
     "sphinx.ext.mathjax",
 ]
 # Suppress warnings from third-party packages
-suppress_warnings = [
-    # "ref.ref",  # undefined labels in torch/rich docstrings
-    # "ref.doc",
-    # "docutils",
-]
 
 sphinx_click_mock_imports = ["mach3sbitools", "pyarrow", "pandas"]
 
 html_theme = "furo"
-
-html_theme_options = {
-    "sidebar_hide_name": False,
-}
 
 # Stop autodoc shortening things aggressively
 keep_warnings = False

@@ -8,21 +8,30 @@ sampling into a single object. The typical workflow is::
     handler.set_dataset(data_folder)
     handler.load_training_data()
     handler.create_posterior(posterior_config)
-    handler.train_posterior(training_config)
+    handler.train_posterior(training_config, model_config=posterior_config)
+    samples = handler.sample_posterior(10_000, x_observed)
+
+When loading a checkpoint produced by the above, no ``PosteriorConfig`` is
+needed — it is read directly from the checkpoint::
+
+    handler = InferenceHandler(prior_path)
+    handler.load_posterior(checkpoint_path)
     samples = handler.sample_posterior(10_000, x_observed)
 """
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+import numpy as np
 import torch
 import torch.nn as nn
-from sbi.inference import NPE
+from sbi.inference import NPE, DirectPosterior
 from sbi.neural_nets import posterior_nn
 from torch.utils.data import TensorDataset
 
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
 from mach3sbitools.simulator import load_prior
+from mach3sbitools.types import SimulatorData
 from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
 from mach3sbitools.utils.device_handler import TorchDeviceHandler
 from mach3sbitools.utils.logger import get_logger
@@ -58,8 +67,12 @@ class InferenceHandler:
         self.parameter_names = self.prior.prior_data.parameter_names
         self.nuisance_pars = nuisance_pars
 
-        if nuisance_pars is not None:
-            self.prior.set_nuisance_filter(nuisance_pars)
+        if len(self.parameter_names[self.prior._nuisance_filter]) != len(
+            self.prior.prior_data.parameter_names
+        ):
+            raise ValueError(
+                "Prior must have same nuisance params as inference handler!"
+            )
 
         self.dataset: ParaketDataset | None = None
         self.inference: NPE | None = None
@@ -128,12 +141,20 @@ class InferenceHandler:
 
     # ── Training ──────────────────────────────────────────────────────────────
 
-    def train_posterior(self, config: TrainingConfig) -> None:
+    def train_posterior(
+        self,
+        config: TrainingConfig,
+        model_config: Any | None = None,
+    ) -> None:
         """
         Train the density estimator using the custom :class:`~mach3sbitools.inference.SBITrainer`.
 
         :param config: Training loop settings.
             See :class:`~mach3sbitools.utils.TrainingConfig`.
+        :param model_config: Any picklable model configuration (e.g.
+            :class:`~mach3sbitools.utils.PosteriorConfig`). When provided it is
+            embedded in every checkpoint so :meth:`load_posterior` requires no
+            config argument.
         :raises ValueError: If :meth:`load_training_data` or
             :meth:`create_posterior` has not been called.
         """
@@ -157,6 +178,7 @@ class InferenceHandler:
             dataset=self._tensor_dataset,
             config=config,
             device=self.device_handler.device,
+            model_config=model_config,
         )
         self._density_estimator = trainer.train(
             density_estimator,
@@ -183,7 +205,7 @@ class InferenceHandler:
     def sample_posterior(
         self,
         num_samples: int,
-        x: list[float],
+        x: list[float] | np.ndarray,
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -203,7 +225,7 @@ class InferenceHandler:
             raise ValueError("Train or load a density estimator first.")
 
         x_tensor = torch.tensor(
-            [x], dtype=torch.float32, device=self.device_handler.device
+            np.array([x]), dtype=torch.float32, device=self.device_handler.device
         )
         return cast(
             torch.Tensor, self.posterior.sample((num_samples,), x=x_tensor, **kwargs)
@@ -212,39 +234,92 @@ class InferenceHandler:
     def load_posterior(
         self,
         checkpoint_path: Path,
-        config: PosteriorConfig,
+        posterior_config: PosteriorConfig | None = None,
     ) -> None:
         """
         Load a trained density estimator from a checkpoint file.
 
+        The ``PosteriorConfig`` is read from the checkpoint's ``"model_config"``
+        key. If *posterior_config* is also supplied it is silently ignored —
+        the checkpoint is the authoritative source of truth for the model
+        architecture, preventing silent mismatches.
+
         Supports both best-model state dicts (plain ``state_dict``) and
         autosave checkpoints (dicts with a ``"model_state"`` key).
 
-        Parameter and observable dimensions are inferred from the prior.
-
-        :param checkpoint_path: Path to a ``.pt`` checkpoint file.
-        :param config: Architecture config — **must match** the settings used
-            during training.
+        :param checkpoint_path: Path to a ``.pt`` / ``.ckpt`` checkpoint file.
+        :param posterior_config: Ignored when the checkpoint contains a
+            ``"model_config"`` entry (i.e. any checkpoint produced by a current
+            trainer). Accepted as a keyword only for backwards compatibility
+            with older checkpoints that pre-date self-contained saves.
         :raises FileNotFoundError: If *checkpoint_path* does not exist.
-        :raises ValueError: If the inference object is unavailable after
-            :meth:`create_posterior`.
+        :raises ValueError: If no model config can be found in the checkpoint
+            and none was supplied.
         """
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+
         if isinstance(ckpt, dict) and "model_state" in ckpt:
             state_dict = ckpt["model_state"]
+            # torch.compile() prefixes every key with "_orig_mod." — strip it so
+            # the state dict loads cleanly into an uncompiled model.
+            if any(k.startswith("_orig_mod.") for k in state_dict):
+                state_dict = {
+                    k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
+                }
+                logger.debug(
+                    "Stripped _orig_mod. prefix from compiled model state dict"
+                )
             logger.info(f"Loading autosave checkpoint from epoch {ckpt['epoch']}")
+
+            # Checkpoint config always wins; fall back to caller-supplied config
+            # only for checkpoints that pre-date self-contained saves.
+            config: PosteriorConfig | None = (
+                ckpt.get("model_config") or posterior_config
+            )
+            if config is None:
+                raise ValueError(
+                    "Checkpoint does not contain a model_config and none was supplied. "
+                    "Pass posterior_config= explicitly for old checkpoints."
+                )
+            if ckpt.get("model_config") and posterior_config is not None:
+                logger.warning(
+                    "Both a checkpoint model_config and a posterior_config were provided. "
+                    "The checkpoint config will be used — the supplied config is ignored."
+                )
         else:
             state_dict = ckpt
+            config = posterior_config
             logger.info("Loading best-model state dict")
+            if config is None:
+                raise ValueError(
+                    "Plain state-dict checkpoint contains no model_config. "
+                    "Pass posterior_config= explicitly."
+                )
 
         self.create_posterior(config)
 
-        theta_dim = self.prior.n_params
-        x_dim = self.prior.event_shape[0]
+        # Infer dims directly from the state dict — more reliable than
+        # querying the prior, which only knows about theta.
+        # The embedding net's running-mean has shape [x_dim]; the initial
+        # autoregressive layer's weight has shape [hidden, theta_dim].
+        try:
+            x_dim = state_dict["net._embedding_net.0._mean"].shape[0]
+            theta_dim = next(
+                v.shape[1]
+                for k, v in state_dict.items()
+                if "autoregressive_net.initial_layer.weight" in k
+            )
+        except (KeyError, StopIteration) as exc:
+            raise ValueError(
+                "Could not infer theta/x dimensions from checkpoint state dict. "
+                "The checkpoint may be corrupt or from an incompatible sbi version."
+            ) from exc
+
+        logger.debug(f"Inferred from checkpoint: theta_dim={theta_dim}, x_dim={x_dim}")
 
         if self.inference is None:
             raise ValueError("Cannot find inference.")
@@ -258,3 +333,33 @@ class InferenceHandler:
         self._density_estimator = density_estimator
 
         logger.info(f"Density estimator loaded from [cyan]{checkpoint_path}[/]")
+
+    def get_log_likelihood(
+        self, theta: SimulatorData, x: list[float] | np.ndarray, **kwargs
+    ):
+        """Get the loglikelihood for a model
+
+        :param theta: Input sampled points
+        :param x: Data point
+        :raises ValueError: If you've not trained anything
+        :return: The log-probability for the sampled points
+        """
+        self.build_posterior()
+
+        if self.posterior is None:
+            raise ValueError("Train or load a density estimator first.")
+
+        x_tensor = torch.tensor(
+            np.array([x]), dtype=torch.float32, device=self.device_handler.device
+        )
+
+        theta_tensor = torch.tensor(
+            np.array(theta), dtype=torch.float32, device=self.device_handler.device
+        )
+
+        # It will be this, this just stops mypy complaining!
+        posterior = cast(DirectPosterior, self.posterior)
+
+        return cast(
+            torch.Tensor, posterior.log_prob(theta=theta_tensor, x=x_tensor, **kwargs)
+        )

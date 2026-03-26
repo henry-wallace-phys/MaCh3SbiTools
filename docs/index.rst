@@ -35,7 +35,7 @@ MaCh3 SBI TOOLS
       :alt: Build & Deploy Sphinx Docs
 
 
-MaCh3 SBI Tools is a package used to perform
+`MaCh3 SBI Tools <https://github.com/henry-wallace-phys/MaCh3SbiTools>`_ is a package used to perform
 Bayesian Simulation based inference with a flexible simulator and training setup using tools from the SBI :cite:`BoeltsDeistler_sbi_2025` package. The simulator is designed to work primarily with MaCh3 :cite:`the_mach3_collaboration_2026_18627288`.
 
 ----

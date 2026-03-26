@@ -9,8 +9,9 @@ files.
 from pathlib import Path
 
 import numpy as np
+from pyarrow import Table
 from pyarrow import parquet as pq
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from mach3sbitools.types import SimulatorData
 from mach3sbitools.utils import get_logger, to_feather
@@ -77,13 +78,15 @@ class Simulator:
         samples = self.prior.sample((n_samples,))
         theta = samples.cpu().numpy()
 
+        count = 0
         valid_theta = np.empty_like(theta)
         valid_x = None
-        count = 0
+
+        # Debug counts
 
         for i, t in enumerate(tqdm(theta, desc="Simulating")):
             try:
-                x = self.simulator_wrapper.simulate(t)
+                x = self.simulator_wrapper.simulate(t.copy())
                 x_sample = np.random.poisson(x)
 
                 if valid_x is None:
@@ -93,8 +96,8 @@ class Simulator:
                 valid_theta[count] = t
                 valid_x[count] = x_sample
                 count += 1
-            except Exception:
-                logger.warning("Error: Bad simulation! Skipping sample.")
+            except Exception as e:
+                logger.warning(f"Error: Bad simulation! Skipping sample. {e}")
 
         return valid_theta[:count], valid_x[
             :count
@@ -134,6 +137,10 @@ class Simulator:
         :param file_path: Destination ``.parquet`` file path. Parent
             directories are created automatically.
         """
+        if not isinstance(file_path, Path):
+            file_path = Path(file_path)
+
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        data_table = {"data": self.simulator_wrapper.get_data_bins()}
+        data_dict = {"data": self.simulator_wrapper.get_data_bins()}
+        data_table = Table.from_pydict(data_dict)
         pq.write_table(data_table, str(file_path))

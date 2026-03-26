@@ -1,8 +1,11 @@
+from typing import TypeAlias
+
 import numpy as np
 from numpy.typing import NDArray
 
-SimulatorData = NDArray[np.float32]
-SimulatorDataGrouped = tuple[SimulatorData, SimulatorData]
+# Basically for x, theta pairs
+SimulatorData: TypeAlias = NDArray[np.float32]
+SimulatorDataGrouped: TypeAlias = tuple[SimulatorData, SimulatorData]
 
-# Boundary condition type
-BoundaryConditions = tuple[list[float], list[float]]
+# For lower, upper bounds
+BoundaryConditions: TypeAlias = tuple[list[float], list[float]]

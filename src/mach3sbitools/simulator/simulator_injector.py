@@ -9,7 +9,9 @@ handles dynamic import, protocol validation, and instantiation.
 import importlib
 import inspect
 import pkgutil
+import sys
 from collections.abc import Callable
+from contextlib import contextmanager
 from difflib import get_close_matches
 from importlib.util import find_spec
 from pathlib import Path
@@ -21,6 +23,20 @@ from mach3sbitools.types import BoundaryConditions
 from mach3sbitools.utils.logger import get_logger
 
 logger = get_logger()
+
+
+@contextmanager
+def _with_cwd_on_path():
+    """Temporarily add the caller's CWD to sys.path for local module resolution."""
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+        try:
+            yield
+        finally:
+            sys.path.remove(cwd)
+    else:
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +150,16 @@ class SimulatorProtocol(Protocol):
         """
         ...
 
+    def get_log_likelihood(self, theta: list[float]) -> float:
+        """
+        For a given theta value, returns the log-likelihood
+
+        :param theta:
+        :return: _description_
+        :rtype: float
+        """
+        ...
+
 
 def _implements(proto: type) -> Callable[[type], type]:
     """
@@ -190,7 +216,9 @@ def _hint(name: str, candidates: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def get_simulator(module_name: str, class_name: str, config: Path) -> SimulatorProtocol:
+def get_simulator(
+    module_name: str, class_name: str, config: Path | str
+) -> SimulatorProtocol:
     """
     Dynamically import, validate, and instantiate a simulator.
 
@@ -214,13 +242,14 @@ def get_simulator(module_name: str, class_name: str, config: Path) -> SimulatorP
         :class:`SimulatorProtocol`.
     :raises SimulatorSetupError: If *config* does not exist on disk.
     """
-    if find_spec(module_name) is None:
-        installed = [m.name for m in pkgutil.iter_modules()]
-        raise SimulatorImportError(
-            f"Module '{module_name}' not found.{_hint(module_name, installed)}"
-        )
+    with _with_cwd_on_path():
+        if find_spec(module_name) is None:
+            installed = [m.name for m in pkgutil.iter_modules()]
+            raise SimulatorImportError(
+                f"Module '{module_name}' not found.{_hint(module_name, installed)}"
+            )
 
-    module = importlib.import_module(module_name)
+        module = importlib.import_module(module_name)
     logger.info("Found simulator '%s'", module_name)
 
     if not hasattr(module, class_name):
@@ -233,6 +262,9 @@ def get_simulator(module_name: str, class_name: str, config: Path) -> SimulatorP
     simulator_cls = getattr(module, class_name)
     simulator_cls = _implements(SimulatorProtocol)(simulator_cls)
     logger.info("Imported simulator '%s' from '%s'", class_name, module_name)
+
+    if not isinstance(config, Path):
+        config = Path(config)
 
     if not config.exists():
         raise SimulatorSetupError(f"Config file not found: {config}")

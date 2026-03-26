@@ -76,11 +76,14 @@ class Prior(torch.distributions.Distribution):
     - **Flat** — flagged by *flat_msk* and not cyclical.
     - **Gaussian** — everything else.
 
-    Nuisance parameters can be filtered at construction time or later via
-    :meth:`set_nuisance_filter`, without modifying the underlying data.
-    """
+    .. warning::
 
-    nuisance_filter: torch.Tensor
+        The nuisance filter is fixed at construction time. Calling
+        :meth:`set_nuisance_filter` after construction is not supported —
+        the distribution masks are built once against the filtered parameter
+        set and cannot be safely remapped afterwards. To change the nuisance
+        filter, construct a new :class:`Prior`.
+    """
 
     def __init__(
         self,
@@ -94,53 +97,89 @@ class Prior(torch.distributions.Distribution):
 
         :param prior_data: Raw prior arrays (names, nominals, bounds, covariance).
         :param flat_msk: Per-parameter flat flags (index-aligned with
-            *prior_data*). Requires exact name matches.
+            *prior_data*). Defaults to all ``False`` if not provided.
         :param cyclical_parameters: fnmatch patterns selecting cyclical
             parameters. Matched parameters receive bounds of ``±2π``.
         :param nuisance_parameters: fnmatch patterns selecting parameters to
-            exclude. Can be updated later with :meth:`set_nuisance_filter`.
+            exclude. Fixed at construction time — cannot be changed later.
         """
         self.device_handler = TorchDeviceHandler()
         self._prior_data = prior_data
-        self.set_nuisance_filter(nuisance_parameters)
+
+        # Apply nuisance filter once — masks are built against the filtered set
+        # and cannot be safely remapped if the filter changes afterwards.
+        self._nuisance_filter = self._build_nuisance_filter(nuisance_parameters)
         self._priors: list[MaskDistributionMap] = []
 
-        cyclical_mask = torch.zeros(len(self.prior_data.nominals), dtype=torch.bool)
+        n_params = len(self.prior_data.nominals)
+
+        # ── Cyclical mask ──────────────────────────────────────────────────
         if cyclical_parameters:
             cyclical_mask_ = [
                 any(fnmatch.fnmatch(p, c) for c in cyclical_parameters)
                 for p in self.prior_data.parameter_names
             ]
             cyclical_mask = self.device_handler.to_tensor(cyclical_mask_)
+        else:
+            cyclical_mask = torch.zeros(
+                n_params, dtype=torch.bool, device=self.device_handler.device
+            )
 
         if any(cyclical_mask):
+            self._prior_data[self._nuisance_filter].lower_bounds[cyclical_mask] = (
+                -2 * torch.pi
+            )
+            self._prior_data[self._nuisance_filter].upper_bounds[cyclical_mask] = (
+                2 * torch.pi
+            )
             self._priors.append(self._get_cyclical_map(cyclical_mask))
 
+        # ── Flat mask ──────────────────────────────────────────────────────
+        # Guard against None so the tensor conversion doesn't crash.
+        flat_msk = flat_msk if flat_msk is not None else [False] * n_params
         flat_mask = self.device_handler.to_tensor(flat_msk) & ~cyclical_mask
         if any(flat_mask):
             self._priors.append(self._get_flat_map(flat_mask))
 
+        # ── Gaussian mask ──────────────────────────────────────────────────
         gaussian_mask = ~cyclical_mask & ~flat_mask
         if any(gaussian_mask):
             self._priors.append(self._get_gaussian_map(gaussian_mask))
 
         super().__init__(
             batch_shape=torch.Size(),
-            event_shape=torch.Size([len(self.prior_data.nominals)]),
+            event_shape=torch.Size([n_params]),
             validate_args=False,
         )
 
-    # ── Private distribution builders ─────────────────────────────────────────
+    # ── Private helpers ────────────────────────────────────────────────────────
+
+    def _build_nuisance_filter(
+        self, nuisance_patterns: list[str] | None
+    ) -> torch.Tensor:
+        """
+        Build a boolean keep-mask from *nuisance_patterns*.
+
+        :param nuisance_patterns: fnmatch patterns, or ``None`` to keep all.
+        :returns: Boolean tensor of shape ``(n_all_params,)``.
+        """
+        if nuisance_patterns is None:
+            n_pars = len(self._prior_data.parameter_names)
+            return torch.ones(
+                n_pars, dtype=torch.bool, device=self.device_handler.device
+            )
+
+        keep = [
+            not any(fnmatch.fnmatch(p, n) for n in nuisance_patterns)
+            for p in self._prior_data.parameter_names
+        ]
+        return self.device_handler.to_tensor(keep)
+
+    # ── Private distribution builders ──────────────────────────────────────────
 
     def _get_cyclical_map(self, cyclical_mask: torch.Tensor) -> MaskDistributionMap:
-        self.prior_data.lower_bounds[cyclical_mask] = -2 * torch.pi
-        self.prior_data.upper_bounds[cyclical_mask] = 2 * torch.pi
         cyclical_data = self.prior_data[cyclical_mask]
-        cyclical_dist = CyclicalDistribution(
-            cyclical_data.nominals,
-            cyclical_data.lower_bounds,
-            cyclical_data.upper_bounds,
-        )
+        cyclical_dist = CyclicalDistribution(cyclical_data.nominals)
         return MaskDistributionMap(cyclical_mask, cyclical_dist)
 
     def _get_flat_map(self, flat_mask: torch.Tensor) -> MaskDistributionMap:
@@ -155,12 +194,12 @@ class Prior(torch.distributions.Distribution):
         )
         return MaskDistributionMap(gaussian_mask, gaussian_dist)
 
-    # ── Properties ────────────────────────────────────────────────────────────
+    # ── Properties ─────────────────────────────────────────────────────────────
 
     @property
     def prior_data(self) -> PriorData:
         """Active :class:`PriorData` after applying the nuisance filter."""
-        return self._prior_data[self.nuisance_filter]
+        return self._prior_data[self._nuisance_filter]
 
     @property
     def mean(self) -> torch.Tensor:
@@ -174,8 +213,14 @@ class Prior(torch.distributions.Distribution):
 
     @property
     def variance(self) -> torch.Tensor:
-        """Per-parameter prior variance, assembled from all sub-distributions."""
-        variance = torch.zeros(len(self.prior_data.nominals))
+        """
+        Per-parameter prior variance, assembled from all sub-distributions.
+
+        The mask for each sub-distribution is sized against the filtered
+        parameter set (same as the tensor being filled), so shapes are always
+        consistent.
+        """
+        variance = torch.zeros(self.n_params, device=self.device_handler.device)
         for mask_map in self._priors:
             variance[mask_map.mask] = mask_map.distribution.variance
         return variance
@@ -190,45 +235,55 @@ class Prior(torch.distributions.Distribution):
             1,
         )
 
-    # ── Nuisance filtering ────────────────────────────────────────────────────
-
-    def set_nuisance_filter(self, nuisance_patterns: list[str] | None = None) -> None:
-        """
-        Update the nuisance parameter filter.
-
-        Parameters matching any of *nuisance_patterns* (fnmatch-style) are
-        excluded from sampling and density evaluation. Call with ``None`` to
-        reset and include all parameters.
-
-        :param nuisance_patterns: fnmatch patterns (e.g. ``['syst_*']``), or
-            ``None`` to clear the filter.
-        """
-        if nuisance_patterns is None:
-            n_pars = len(self._prior_data.parameter_names)
-            self.nuisance_filter = torch.ones(n_pars, dtype=torch.bool)
-            return
-
-        nuisance_filter_ = [
-            not any(fnmatch.fnmatch(p, n) for n in nuisance_patterns)
-            for p in self._prior_data.parameter_names
-        ]
-        self.nuisance_filter = self.device_handler.to_tensor(nuisance_filter_)
-
-    # ── Distribution interface ────────────────────────────────────────────────
+    # ── Distribution interface ─────────────────────────────────────────────────
 
     def sample(self, sample_shape=torch.Size([])) -> torch.Tensor:
         """
         Draw samples from the composite prior.
 
-        :param sample_shape: Batch shape, e.g. ``torch.Size([1000])``.
+        Gaussian components are rejection-sampled within their bounds.
+
+        :param sample_shape: Batch shape.
         :returns: Tensor of shape ``(*sample_shape, n_params)``.
+        :raises RuntimeError: If Gaussian rejection sampling does not converge.
         """
         sample_shape = torch.Size(sample_shape)
-        samples = torch.empty(*sample_shape, self.n_params, dtype=torch.double)
+        samples = torch.empty(
+            (*sample_shape, self.n_params),
+            dtype=torch.double,
+            device=self.device_handler.device,
+        )
+
         for mask_map in self._priors:
-            samples[..., mask_map.mask] = mask_map.distribution.sample(sample_shape).to(
-                torch.double
-            )
+            if isinstance(mask_map.distribution, MultivariateNormal):
+                lb = self.prior_data.lower_bounds[mask_map.mask]
+                ub = self.prior_data.upper_bounds[mask_map.mask]
+                remaining = torch.ones(
+                    sample_shape, dtype=torch.bool, device=self.device_handler.device
+                )
+                out = torch.empty(
+                    (*sample_shape, int(mask_map.mask.sum())),
+                    dtype=torch.double,
+                    device=self.device_handler.device,
+                )
+                for _ in range(10_000):
+                    if not remaining.any():
+                        break
+                    new = mask_map.distribution.sample(sample_shape).to(torch.double)
+                    in_bounds = ((new >= lb) & (new <= ub)).all(dim=-1)
+                    accepted = in_bounds & remaining
+                    out[accepted] = new[accepted]
+                    remaining[accepted] = False
+                if remaining.any():
+                    raise RuntimeError(
+                        "Gaussian rejection sampling failed after 10,000 iterations"
+                    )
+                samples[..., mask_map.mask] = out
+            else:
+                samples[..., mask_map.mask] = mask_map.distribution.sample(
+                    sample_shape
+                ).to(torch.double)
+
         return samples
 
     def rsample(self, sample_shape=torch.Size([])) -> torch.Tensor:
@@ -258,7 +313,7 @@ class Prior(torch.distributions.Distribution):
         )
         return self.device_handler.to_tensor(in_bounds.all(dim=-1))
 
-    # ── Persistence ───────────────────────────────────────────────────────────
+    # ── Persistence ────────────────────────────────────────────────────────────
 
     def save(self, output_path: Path) -> None:
         """
@@ -281,13 +336,11 @@ class Prior(torch.distributions.Distribution):
         self._prior_data = self._prior_data.to(device)
         for i, mask_map in enumerate(self._priors):
             self._priors[i] = mask_map.to(device)
-        self.nuisance_filter = self.nuisance_filter.to(device)
+        self._nuisance_filter = self._nuisance_filter.to(device)
         return self
 
 
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
+# ── Module-level helpers ───────────────────────────────────────────────────────
 
 
 def _check_boundary(
@@ -400,6 +453,9 @@ def load_prior(prior_path: Path, device=torch.device("cpu")) -> Prior:
     :raises PriorNotFound: If *prior_path* does not exist or does not contain
         a valid :class:`Prior`.
     """
+    if not isinstance(prior_path, Path):
+        prior_path = Path(prior_path)
+
     if not prior_path.is_file() or not prior_path.exists():
         raise PriorNotFound("Could not find prior %s", prior_path)
 

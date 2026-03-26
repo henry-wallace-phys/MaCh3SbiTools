@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -55,7 +56,7 @@ def simulator_class() -> str:
 @pytest.fixture(scope="session")
 def dummy_config(tmp_path_factory) -> Path:
     # Dummy configuration
-    dummy_config_dir = tmp_path_factory.mktemp("dummy_configs")
+    dummy_config_dir: Path = tmp_path_factory.mktemp("dummy_configs")
     dummy_config_file = dummy_config_dir / "dummy_config.yaml"
     dummy_config_file.touch()
 
@@ -63,8 +64,6 @@ def dummy_config(tmp_path_factory) -> Path:
 
 
 def generate_data(data_folder: Path, test_consts: TestConsts) -> None:
-    [f"theta_{i}" for i in range(test_consts.x_dim)]
-
     for i in range(test_consts.n_files):
         file = data_folder / f"tmp_data{i}.feather"
         to_feather(file, test_consts.theta, test_consts.x)
@@ -72,7 +71,7 @@ def generate_data(data_folder: Path, test_consts: TestConsts) -> None:
 
 @pytest.fixture(scope="session")
 def dummy_data_dir(tmp_path_factory, test_consts) -> Path:
-    data_folder = tmp_path_factory.mktemp("data")
+    data_folder: Path = tmp_path_factory.mktemp("data")
     generate_data(data_folder, test_consts)
     return data_folder
 
@@ -91,7 +90,7 @@ def prior(simulator_injector):
 
 @pytest.fixture(scope="session")
 def prior_save(prior, tmp_path_factory) -> Path:
-    prior_dir = tmp_path_factory.mktemp("priors")
+    prior_dir: Path = tmp_path_factory.mktemp("priors")
     prior_path = prior_dir / "prior.pkl"
     prior.save(prior_path)
     return prior_path
@@ -111,7 +110,7 @@ def posterior_config():
 
 @pytest.fixture(scope="session")
 def model_save_path(tmp_path_factory) -> Path:
-    return tmp_path_factory.mktemp("models") / "test_model.ckpt"
+    return cast(Path, tmp_path_factory.mktemp("models") / "test_model.ckpt")
 
 
 @pytest.fixture(scope="session")

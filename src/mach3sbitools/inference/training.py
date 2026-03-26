@@ -42,6 +42,7 @@ def save_checkpoint(
     epochs_no_improve: int,
     save_path: Path,
     training_config: TrainingConfig | None = None,
+    model_config: Any | None = None,
     use_unique_path: bool = True,
 ) -> None:
     """
@@ -56,7 +57,10 @@ def save_checkpoint(
     :param best_val_loss: Best EMA validation loss seen so far.
     :param epochs_no_improve: Current early-stopping counter.
     :param save_path: Base file path.
-    :param training_config: Optionally embed the config for provenance.
+    :param training_config: Optionally embed the training config for provenance.
+    :param model_config: Optionally embed the model config (e.g. PosteriorConfig)
+        so the checkpoint is self-contained and the caller does not need to
+        supply the config again when loading.
     :param use_unique_path: Append ``_epoch{N}`` to the stem when ``True``.
     """
     ckpt = {
@@ -71,16 +75,18 @@ def save_checkpoint(
         "best_val_loss": best_val_loss,
         "epochs_no_improve": epochs_no_improve,
         "training_config": training_config,
+        "model_config": model_config,
     }
+
+    if not isinstance(save_path, Path):
+        save_path = Path(save_path)
 
     ckpt_path = (
         save_path.parent / "checkpoints" / f"{save_path.stem}_epoch{epoch}.ckpt"
         if use_unique_path
         else save_path
     )
-    # Just make sure we can save checkpoint files
-    if use_unique_path:
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+    ckpt_path.parent.mkdir(parents=True, exist_ok=True)
 
     torch.save(ckpt, ckpt_path)
     logger.debug(f"Autosaved checkpoint → [cyan]{ckpt_path}[/]")
@@ -96,20 +102,37 @@ class SBITrainer:
 
     Typical usage via :class:`~mach3sbitools.inference.InferenceHandler`::
 
-        trainer = SBITrainer(dataset, config, device)
+        trainer = SBITrainer(dataset, config, device, model_config=posterior_cfg)
         best_model = trainer.train(density_estimator)
+
+    Every checkpoint written by the trainer will contain a ``model_config`` key
+    so the model can be reconstructed without supplying the config again::
+
+        ckpt = torch.load("run.ckpt", map_location="cpu")
+        model = build_density_estimator(ckpt["model_config"])
+        model.load_state_dict(ckpt["model_state"])
     """
 
-    def __init__(self, dataset: TensorDataset, config: TrainingConfig, device: str):
+    def __init__(
+        self,
+        dataset: TensorDataset,
+        config: TrainingConfig,
+        device: str,
+        model_config: Any | None = None,
+    ):
         """
         :param dataset: Pre-loaded ``(theta, x)`` :class:`~torch.utils.data.TensorDataset`.
         :param config: Training hyperparameters.
         :param device: PyTorch device string.
+        :param model_config: Any picklable model configuration object (e.g.
+            ``PosteriorConfig``).  When provided it is embedded in every
+            checkpoint so the caller never has to supply it again at load time.
         """
         self.device = device
         self.device_type = device.split(":")[0]
         self.use_amp = False
         self.config = config
+        self.model_config = model_config
 
         self.optimizer: torch.optim.Optimizer | None = None
         self.warmup: LinearLR | None = None
@@ -219,8 +242,6 @@ class SBITrainer:
             show_progress=self.config.show_progress,
         )
 
-        # `tp` is either a TrainingProgress or a nullcontext — both are used
-        # as context managers, but only TrainingProgress has a `.progress`.
         progress_ctx = tp.progress if isinstance(tp, TrainingProgress) else tp
 
         with progress_ctx:
@@ -362,13 +383,23 @@ class SBITrainer:
             raise SBITrainingException("Schedulers not provided")
 
         ckpt = torch.load(resume_checkpoint, map_location="cpu")
-        model.load_state_dict(ckpt["model_state"])
+        model_state = ckpt["model_state"]
+        if any(k.startswith("_orig_mod.") for k in model_state):
+            model_state = {
+                k.removeprefix("_orig_mod."): v for k, v in model_state.items()
+            }
+            logger.debug("Stripped _orig_mod. prefix from compiled model state dict")
+        model.load_state_dict(model_state)
         self.optimizer.load_state_dict(ckpt["optimizer_state"])
         self.warmup.load_state_dict(ckpt["warmup_scheduler_state"])
         self.plateau.load_state_dict(ckpt["plateau_scheduler_state"])
         self.scaler.load_state_dict(ckpt["scaler_state"])
         self.best_val_loss = ckpt["best_val_loss"]
         self.epochs_no_improve = ckpt["epochs_no_improve"]
+
+        # Also restore model_config from the checkpoint if not already supplied
+        if self.model_config is None and "model_config" in ckpt:
+            self.model_config = ckpt["model_config"]
 
         for state in self.optimizer.state.values():
             for k, v in state.items():
@@ -466,6 +497,7 @@ class SBITrainer:
                 self.epochs_no_improve,
                 self.config.save_path,
                 training_config=self.config,
+                model_config=self.model_config,
                 use_unique_path=False,
             )
 
@@ -481,6 +513,7 @@ class SBITrainer:
                 self.epochs_no_improve,
                 self.config.save_path,
                 training_config=self.config,
+                model_config=self.model_config,
             )
 
     # ── Static utilities ──────────────────────────────────────────────────────

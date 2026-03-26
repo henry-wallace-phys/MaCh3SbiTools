@@ -19,3 +19,22 @@ sbi-logs
 *.err
 *.pkl
 *.pdf
+*.feather
+*.arrow
+*.paraket
+
+*.DS_Store
+*.coverage
+*.idea
+uv.lock
+
+# Let's not save the SBI information from tutorial
+tutorial/data
+tutorial/prior
+tutorial/models
+tutorial/observations
+tutorial/my_simulator
+tutorial/my_simulator/my_simulator.py
+
+*jupyter_tutorial*
+*tensor-logs*

@@ -64,6 +64,9 @@ def from_feather(
     :returns: Tuple of ``(theta, x)`` as ``float32`` numpy arrays.
     :raises FileNotFoundError: If *file_name* does not exist.
     """
+    if not isinstance(file_name, Path):
+        file_name = Path(file_name)
+
     if not file_name.exists():
         raise FileNotFoundError(file_name)
 
@@ -90,6 +93,9 @@ def to_feather(
     :param x_values: Observable array of shape ``(n_samples, n_bins)``.
     :raises ValueError: If *file_name* does not have a ``.feather`` suffix.
     """
+    if not isinstance(file_name, Path):
+        file_name = Path(file_name)
+
     if file_name.suffix != ".feather":
         raise ValueError("Must store outputs files with the *.feather extension")
 

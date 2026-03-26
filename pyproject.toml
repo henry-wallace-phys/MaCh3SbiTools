@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "2.1.1"
+version = "2.1.2"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,11 +16,11 @@ dependencies = [
     "pyarrow",
     "scipy-stubs~=1.17.1",
     "arviz",
-    "rich"
-]
-
-[project.optional-dependencies]
-dev = [
+    "rich",
+    "pre-commit",
+    "pymc",
+    "types-PyYAML",
+    "click-option-group",
     "pytest",
     "pytest-cov",
     "ruff",
@@ -28,6 +28,7 @@ dev = [
     "sphinx"
 ]
 
+[project.optional-dependencies]
 docs = [
     "sphinx",
     "sphinx-click==4.4.0", # OLD VERSION NEEDED
@@ -41,10 +42,14 @@ mach3sbi = "mach3sbitools.apps.main_cli:cli"
 
 [tool.pytest.ini_options]
 addopts = "-v --tb=short --cov=mach3sbitools tests/  --cov-report=term-missing"
+markers = [
+    "slow: mark a test that takes a long time to run.",
+]
+
 
 [tool.coverage.run]
 source = ["mach3sbitools"]
-omit = ["tests/*", "scripts/*"]
+omit = ["tests/*", "scripts/*", "tutorial/*"]
 
 # * See https://docs.astral.sh/ruff/rules/ for details on Ruff's linting options
 [tool.ruff.lint]
@@ -66,3 +71,4 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+exclude = ["build"]
