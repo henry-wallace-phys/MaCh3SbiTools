@@ -16,6 +16,7 @@ def simulator(dummy_config):
     )
 
 
+@pytest.mark.slow
 def test_simulate_returns_at_most_n_samples(simulator):
     """Since bad simulations are skipped, we should get at most n_sims back"""
     n_sims = 5000
@@ -26,6 +27,7 @@ def test_simulate_returns_at_most_n_samples(simulator):
     assert theta.shape[0] == x.shape[0]
 
 
+@pytest.mark.slow
 def test_simulate_x_is_poisson_distributed(simulator):
     """
     DummySimulator.simulate returns np.ones(10), so x_sample ~ Poisson(lambda=1).
@@ -64,6 +66,7 @@ def test_simulate_x_is_poisson_distributed(simulator):
         )
 
 
+@pytest.mark.slow
 def test_simulate_x_is_non_negative_integer(simulator):
     """Poisson samples must be non-negative integers"""
     _, x = simulator.simulate(10000)
@@ -72,6 +75,7 @@ def test_simulate_x_is_non_negative_integer(simulator):
     assert np.all(x == x.astype(int)), "All Poisson samples should be integers"
 
 
+@pytest.mark.slow
 def test_simulate_x_mean_close_to_one(simulator):
     """Poisson(1) has mean=1 and variance=1. Check within 3 sigma."""
     n_sims = 20000
@@ -85,6 +89,7 @@ def test_simulate_x_mean_close_to_one(simulator):
     )
 
 
+@pytest.mark.slow
 def test_simulate_x_variance_close_to_one(simulator):
     """Poisson(1) has variance=1. Check within reasonable tolerance."""
     n_sims = 200000
@@ -96,6 +101,7 @@ def test_simulate_x_variance_close_to_one(simulator):
     )
 
 
+@pytest.mark.slow
 def test_save(simulator, tmp_path):
     n_sims = 10
     x, t = simulator.simulate(n_sims)
