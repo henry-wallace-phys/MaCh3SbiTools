@@ -1,48 +1,48 @@
 Tests:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - tests/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**
 
 Tutorial:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - tutorial/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - tutorial/**
 
 Apps:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - src/mach3sbitools/apps/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mach3sbitools/apps/**
 
 DataLoading:
-  -changed-files:
-    -any-hlob-to-any-file:
-      - src/mach3sbitools/apps/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mach3sbitools/apps/**
 
 Diagnostics:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - src/mach3sbitools/diagnostics/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mach3sbitools/diagnostics/**
 
 Inference:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - src/mach3sbitools/inference/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mach3sbitools/inference/**
 
 Simulator:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - src/mach3sbitools/simulator/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mach3sbitools/simulator/**
 
 Utils:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - src/mach3sbitools/utils/**
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mach3sbitools/utils/**
 
 TypesAndExceptions:
-  -changed-files:
-      -any-hlob-to-any-file:
-        - src/mach3sbitools/types.py
-        - src/mach3sbitools/exceptions.py
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mach3sbitools/types.py
+          - src/mach3sbitools/exceptions.py
 
 CI/CD:
   - changed-files:
