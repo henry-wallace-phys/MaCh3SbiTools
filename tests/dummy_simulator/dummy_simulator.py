@@ -54,7 +54,7 @@ class DummySimulator:
     def get_covariance_matrix(self) -> np.ndarray:
         return np.identity(THETA_DIM, dtype=np.float32)
 
-    def get_loglikelihood(self, theta) -> float:
+    def get_log_likelihood(self, theta) -> float:
         np_theta = np.array(theta, dtype=float)
         np_data = np.array(self.get_data_bins(), dtype=float)
 
