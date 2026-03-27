@@ -47,6 +47,15 @@ conda develop .
 - The full tutorial lives in the [tutorials directory](https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main/tutorial). The Jupyter notebooks are designed to go from
   physics code all the way your own fully implemented + trained SBI instance
 
+## Examples
+
+- For MaCh3 Tutorial the simulations can be run with the example class [here](src/mach3sbitools/examples/pyMaCh3/pyMaCh3.py).
+  The command for doing so is:
+
+  ```shell
+  mach3sbi simulate -m "mach3sbitools.examples" -c "pyMach3Simulator" [usual CLI opts]
+  ```
+
 ## References
 
 [1] Boelts, J. et al. (2025). sbi reloaded: a toolkit for simulation-based inference workflows.
