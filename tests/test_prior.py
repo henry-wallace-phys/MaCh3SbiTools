@@ -1,6 +1,7 @@
 from unittest.mock import call, patch
 
 import numpy as np
+import pytest
 import torch
 
 from mach3sbitools.simulator.priors.dataclasses import PriorData
@@ -10,6 +11,7 @@ from mach3sbitools.utils import get_logger
 logger = get_logger()
 
 
+@pytest.mark.slow
 def test_dist_types(prior):
     # Flat mask first
     assert len(prior._priors) == 3

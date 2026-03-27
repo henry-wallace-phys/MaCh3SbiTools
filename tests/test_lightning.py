@@ -189,6 +189,7 @@ class TestSBILightningModuleGPULogging:
                 module.on_train_epoch_end()
         mock_log.assert_not_called()
 
+    @pytest.mark.slow
     def test_gpu_stats_logged_when_cuda_available(self, tmp_path):
         module = SBILightningModule(_tiny_model(), _minimal_config(tmp_path))
         with (
