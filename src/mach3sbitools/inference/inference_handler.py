@@ -47,6 +47,7 @@ from mach3sbitools.utils.device_handler import TorchDeviceHandler
 from mach3sbitools.utils.logger import get_logger
 
 logger = get_logger()
+torch.set_float32_matmul_precision("medium")
 
 
 def _select_accelerator_and_strategy():
