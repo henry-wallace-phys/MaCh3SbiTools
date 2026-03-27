@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "2.1.1209"
+version = "2.1.4"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
