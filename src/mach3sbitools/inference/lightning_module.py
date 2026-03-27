@@ -13,6 +13,8 @@ is to construct this module and pass it to a
     trainer.fit(module, datamodule=datamodule)
 """
 
+from typing import cast
+
 import lightning as L
 import torch
 import torch.nn as nn
@@ -71,7 +73,7 @@ class SBILightningModule(L.LightningModule):
         :param x: Observable tensor of shape ``(batch_size, n_bins)``.
         :returns: Per-sample loss tensor of shape ``(batch_size,)``.
         """
-        return self.model.loss(theta, x)
+        return cast(torch.Tensor, self.model.loss(theta, x))
 
     def training_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -96,7 +98,7 @@ class SBILightningModule(L.LightningModule):
             prog_bar=True,
             sync_dist=True,
         )
-        return loss
+        return cast(torch.Tensor, loss)
 
     def validation_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -121,7 +123,7 @@ class SBILightningModule(L.LightningModule):
             prog_bar=True,
             sync_dist=True,
         )
-        return loss
+        return cast(torch.Tensor, loss)
 
     def on_validation_epoch_end(self) -> None:
         """

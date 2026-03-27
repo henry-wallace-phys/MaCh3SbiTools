@@ -15,7 +15,7 @@ would only add IPC overhead.
 
 import lightning as L
 import torch
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
 
 from mach3sbitools.utils.config import TrainingConfig
 
@@ -52,8 +52,8 @@ class SBIDataModule(L.LightningDataModule):
         super().__init__()
         self.dataset = dataset
         self.config = config
-        self.train_dataset: TensorDataset | None = None
-        self.val_dataset: TensorDataset | None = None
+        self.train_dataset: Dataset | None = None
+        self.val_dataset: Dataset | None = None
 
     def setup(self, stage: str | None = None) -> None:
         """
@@ -86,6 +86,9 @@ class SBIDataModule(L.LightningDataModule):
             training subset with ``pin_memory=True`` for fast GPU transfers.
         :raises RuntimeError: If :meth:`setup` has not been called.
         """
+        if self.train_dataset is None:
+            raise RuntimeError("Training set has not been set.")
+
         return DataLoader(
             self.train_dataset,
             batch_size=self.config.batch_size,
@@ -103,6 +106,9 @@ class SBIDataModule(L.LightningDataModule):
             the validation subset with ``pin_memory=True``.
         :raises RuntimeError: If :meth:`setup` has not been called.
         """
+        if self.val_dataset is None:
+            raise RuntimeError("Validation set has not been set.")
+
         return DataLoader(
             self.val_dataset,
             batch_size=self.config.batch_size,

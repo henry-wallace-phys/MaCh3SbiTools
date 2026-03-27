@@ -5,6 +5,8 @@ Statistical property tests share a single large sample draw via a
 session-scoped fixture to avoid redundant sampling overhead.
 """
 
+from typing import cast
+
 import numpy as np
 import pytest
 import torch
@@ -21,7 +23,7 @@ def cyclical_distribution() -> CyclicalDistribution:
 @pytest.fixture(scope="session")
 def large_samples(cyclical_distribution) -> torch.Tensor:
     """50k samples shared across all statistical property tests."""
-    return cyclical_distribution.sample(torch.Size([50_000]))
+    return cast(torch.Tensor, cyclical_distribution.sample(torch.Size([50_000])))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
