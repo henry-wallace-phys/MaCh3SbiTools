@@ -27,12 +27,14 @@ def pymach3_instance():
 
 @pytest.mark.skipif(not test_possible, reason="pyMach3 is not installed")
 @pytest.mark.slow
+@pytest.mark.mach3_tutorial
 def test_protocol(pymach3_simulator):
     assert isinstance(pymach3_simulator.simulator_wrapper, SimulatorProtocol)
 
 
 @pytest.mark.skipif(not test_possible, reason="pyMach3 is not installed")
 @pytest.mark.slow
+@pytest.mark.mach3_tutorial
 def test_simulator(pymach3_simulator):
     samples = pymach3_simulator.simulate(10)
     assert len(samples) == 10

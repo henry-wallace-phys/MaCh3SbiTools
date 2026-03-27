@@ -45,6 +45,7 @@ mach3sbi = "mach3sbitools.apps.main_cli:cli"
 addopts = "-v --tb=short --cov=mach3sbitools tests/  --cov-report=term-missing"
 markers = [
     "slow: mark a test that takes a long time to run.",
+    "mach3tutorial: mark a test that requires MaCh3Tutorial",
 ]
 # We really don't need these in testing as it complains
 # about the tiny test models!
