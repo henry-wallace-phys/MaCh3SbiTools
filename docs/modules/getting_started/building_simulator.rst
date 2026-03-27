@@ -30,43 +30,47 @@ Your "proper" simulator should be written in Python/have python bindings. The in
             # Initialise the actual simulator
             self._proper_simulator = ProperSimulator(config_file)
 
-        def simulate(theta: list[float])->list[float]:
+        def simulate(self, theta: list[float])->list[float]:
             # Run the actual simulation for example:
             self._proper_simulator.set_values(theta)
             self._proper_simulator.reweight()
             return self._proper_simulator.get_mc()
 
-        def get_parameter_names()->list[str]:
+        def get_parameter_names(self)->list[str]:
             # Get the parameter names, for example:
             return self._proper_simulator.parameters.get_names()
 
-        def get_parameter_bounds()->list[float], list[float]
+        def get_parameter_bounds(self)->list[float], list[float]
             # Get the upper/lower bounds for example:
             lower_bnd = self._proper_simulator.parameters.lower_bounds()
             upper_bnd = self._proper_simulator.parameters.upper_bounds()
 
             return lower_bnd, upper_bnd
 
-        def get_is_flat(int i)->bool:
+        def get_is_flat(self, int i)->bool:
             # Holdover from MaCh3 where everything is either flat or Gaussian prior
             # Checks if a given input has a flat prior
             return self._proper_simulator.parameters.is_flat(i)
 
-        def get_data_bins()->list[float]:
+        def get_data_bins(self)->list[float]:
             # Get the actual bin heights for data
             return = []
             for s in self._proper_simulator.samples:
                 return.extend(s.get_bins()[0])
 
-        def get_parameter_nominals()->list[float]:
+        def get_parameter_nominals(self)->list[float]:
             # Get the prior nominal values for each parameter
             return self._proper_simulator.parameters.nominals()
 
-        def get_parameter_errors()->list[float]:
+        def get_parameter_errors(self)->list[float]:
             # Get the prior uncertainties for each parameter
             return self._proper_simulator.parameters.errors()
 
-        def get_covariance_matrix():
+        def get_log_likelihood(self, theta):
+            # Get the model likelihood!
+            return self._proper_simulator.get_loglikelihood()
+
+        def get_covariance_matrix(self):
             # Get the prior covariance matrix for all parameters
             return self._proper_simulator.parameters.get_cov()
 
