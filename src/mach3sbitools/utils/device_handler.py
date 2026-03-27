@@ -48,6 +48,8 @@ class TorchDeviceHandler:
             return torch.tensor(data.values.astype(np.float32), device=self.device)
         if isinstance(data, np.ndarray):
             return torch.tensor(data.astype(np.float32), device=self.device)
+        if isinstance(data, torch.Tensor):
+            return data.clone().detach().to(self.device)
         try:
             return torch.tensor(data, device=self.device)
         except Exception as e:

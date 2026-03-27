@@ -1,7 +1,7 @@
 from .inference_handler import InferenceHandler
-from .training import SBITrainer
+from .lightning_module import SBILightningModule
 
 __all__ = [
     "InferenceHandler",
-    "SBITrainer",
+    "SBILightningModule",
 ]

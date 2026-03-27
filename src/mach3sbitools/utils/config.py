@@ -31,7 +31,6 @@ class TrainingConfig:
         Set to ``False`` for non-interactive / CI environments.
     :param tensorboard_dir: Directory for TensorBoard event files.
         ``None`` disables TensorBoard logging.
-    :param warmup_epochs: Epochs for linear LR warm-up from 1% to 100%.
     :param ema_alpha: EMA smoothing factor for validation loss used in early
         stopping. Smaller values are smoother.
     :param compile: Compile the model with ``torch.compile``.
@@ -51,7 +50,6 @@ class TrainingConfig:
     print_interval: int = 10
     show_progress: bool = False
     tensorboard_dir: Path | None = None
-    warmup_epochs: int = 50
     ema_alpha: float = 0.05
     compile: bool = False
 

@@ -1,105 +1,107 @@
+"""
+Tests for mach3sbitools.simulator.priors.cyclical_distribution.
+
+Statistical property tests share a single large sample draw via a
+session-scoped fixture to avoid redundant sampling overhead.
+"""
+
 import numpy as np
 import pytest
 import torch
-from scipy.stats import ks_2samp  # ← correct two-sample function
+from scipy.stats import ks_2samp
 
 from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistribution
 
 
 @pytest.fixture(scope="session")
 def cyclical_distribution() -> CyclicalDistribution:
-    nominals = torch.ones(1)
-    return CyclicalDistribution(nominals)
+    return CyclicalDistribution(torch.ones(1))
+
+
+@pytest.fixture(scope="session")
+def large_samples(cyclical_distribution) -> torch.Tensor:
+    """50k samples shared across all statistical property tests."""
+    return cyclical_distribution.sample(torch.Size([50_000]))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Analytical properties
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def test_log_prob(cyclical_distribution):
-    theta_values = torch.tensor([[0.0], [10.0], [1.0]], dtype=torch.double)
-
-    # Need to calculate the likelihood
+    theta = torch.tensor([[0.0], [10.0], [1.0]], dtype=torch.double)
     l_one = 0.5 * (np.sin(0.25 * (1 + 2 * np.pi)) ** 2) / np.pi
-    llh_one = np.log(l_one)
-    expected_log_pdf = torch.tensor(
-        [[np.log(0.5 / np.pi)], [torch.tensor(np.float64("-inf"))], [llh_one]],
+    expected = torch.tensor(
+        [[np.log(0.5 / np.pi)], [torch.tensor(np.float64("-inf"))], [np.log(l_one)]],
         dtype=torch.double,
     )
-
-    likelihoods = cyclical_distribution.log_prob(theta_values)
-    assert torch.allclose(likelihoods, expected_log_pdf)
+    assert torch.allclose(cyclical_distribution.log_prob(theta), expected)
 
 
 def test_cdf(cyclical_distribution):
-    theta_values = torch.tensor([[0.0], [10.0], [1.0]], dtype=torch.double)
-
+    theta = torch.tensor([[0.0], [10.0], [1.0]], dtype=torch.double)
     cdf_one = 0.5 * (0.5 + np.sin(0.5) + np.pi) / np.pi
-    expected_cdf = torch.tensor([[1 / 2], [1], [cdf_one]], dtype=torch.double)
-    cdf = cyclical_distribution.cdf(theta_values)
-
-    assert torch.allclose(cdf, expected_cdf)
+    expected = torch.tensor([[0.5], [1.0], [cdf_one]], dtype=torch.double)
+    assert torch.allclose(cyclical_distribution.cdf(theta), expected)
 
 
-def test_sample_shape(cyclical_distribution):
-    """Samples have the correct shape."""
-    samples = cyclical_distribution.sample(torch.Size([100]))
-    assert samples.shape == torch.Size([100, 1])
+# ─────────────────────────────────────────────────────────────────────────────
+# Sample shape — parametrized
+# ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_sample_shape_scalar(cyclical_distribution):
-    """Calling sample() with no arguments returns a single event."""
-    samples = cyclical_distribution.sample()
-    assert samples.shape == torch.Size([1])
+@pytest.mark.parametrize(
+    "shape,expected",
+    [
+        (torch.Size([100]), torch.Size([100, 1])),
+        (torch.Size([]), torch.Size([1])),
+    ],
+)
+def test_sample_shape(cyclical_distribution, shape, expected):
+    assert cyclical_distribution.sample(shape).shape == expected
 
 
-def test_sample_in_bounds(cyclical_distribution):
-    """All samples fall within [-2pi, 2pi]."""
-    samples = cyclical_distribution.sample(torch.Size([1000]))
-    assert torch.all(samples >= -2 * torch.pi)
-    assert torch.all(samples <= 2 * torch.pi)
+# ─────────────────────────────────────────────────────────────────────────────
+# Statistical properties — shared large_samples fixture
+# ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_sample_mean(cyclical_distribution):
-    """
-    Sample mean should be close to 0 by symmetry of the distribution
-    around 0 on [-2pi, 2pi].
-    """
-    samples = cyclical_distribution.sample(torch.Size([10_000]))
-    assert torch.abs(samples.mean()) < 0.1
+def test_sample_in_bounds(large_samples):
+    assert torch.all(large_samples >= -2 * torch.pi)
+    assert torch.all(large_samples <= 2 * torch.pi)
 
 
-def test_sample_cdf_uniformity(cyclical_distribution):
-    """
-    Applying the CDF to samples should give approximately Uniform(0,1).
-    This is the probability integral transform test - if sampling is correct,
-    CDF(samples) ~ Uniform(0, 1) with mean ~0.5 and std ~1/sqrt(12).
-    """
-    samples = cyclical_distribution.sample(torch.Size([50_000]))
-    u = cyclical_distribution.cdf(samples)
+def test_sample_mean_near_zero(large_samples):
+    """Distribution is symmetric around 0 so mean should be close to 0."""
+    assert torch.abs(large_samples.mean()) < 0.1
 
+
+def test_sample_cdf_uniformity(cyclical_distribution, large_samples):
+    """CDF(samples) ~ Uniform(0,1) by probability integral transform."""
+    u = cyclical_distribution.cdf(large_samples)
     assert torch.abs(u.mean() - 0.5) < 0.05
     assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.05
 
 
-def test_against_mc(cyclical_distribution):
-    """
-    Compare samples from CyclicalDistribution against an accept-reject
-    Monte Carlo reference using the true PDF.
+# ─────────────────────────────────────────────────────────────────────────────
+# Two-sample KS test against accept-reject reference
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Robustness improvements vs. the naive version:
-      - Fixed RNG seeds make the test deterministic.
-      - Mean / variance tolerances are derived from the CLT (5-sigma), so
-        they scale correctly with n and the distribution's own spread.
-      - ks_2samp is used explicitly for the two-sample KS test.
+
+def test_against_mc(cyclical_distribution, large_samples):
+    """
+    Compare samples against an accept-reject Monte Carlo reference.
+    Uses CLT-derived tolerances so the test scales correctly with n.
     """
     rng = np.random.default_rng(42)
-    torch.manual_seed(42)
-
-    n_samples = 50_000
+    n = 50_000
     lower, upper = -2 * np.pi, 2 * np.pi
-    M = 0.5 / np.pi  # uniform envelope (= max of the PDF)
+    M = 0.5 / np.pi  # uniform envelope = max of PDF
 
-    # --- Build reference via accept-reject ---
-    accepted = []
-    while len(accepted) < n_samples:
-        batch = 2 * n_samples
+    accepted: list[float] = []
+    while len(accepted) < n:
+        batch = 2 * n
         x = rng.uniform(lower, upper, size=batch)
         y = rng.uniform(0, M, size=batch)
         pdf_vals = (
@@ -109,25 +111,14 @@ def test_against_mc(cyclical_distribution):
         )
         accepted.extend(x[y < pdf_vals].tolist())
 
-    ref = np.array(accepted[:n_samples])
-    samples = cyclical_distribution.sample(torch.Size([n_samples])).squeeze().numpy()
+    ref = np.array(accepted[:n])
+    samples = large_samples.squeeze().numpy()
 
-    # --- CLT-derived mean tolerance (5-sigma) ---
-    # Under H₀: (mean_s - mean_r) ~ N(0, (σ_s² + σ_r²) / n)
-    mean_tol = 5 * np.sqrt((samples.var() + ref.var()) / n_samples)
-    assert abs(samples.mean() - ref.mean()) < mean_tol, (
-        f"Means differ by {abs(samples.mean() - ref.mean()):.4f}, "
-        f"tolerance {mean_tol:.4f}"
-    )
+    mean_tol = 5 * np.sqrt((samples.var() + ref.var()) / n)
+    assert abs(samples.mean() - ref.mean()) < mean_tol
 
-    # --- CLT-derived variance tolerance (5 sigma) ---
-    # Var of sample variance estimator ~ 2σ⁴ / (n - 1)
-    var_tol = 5 * samples.var() ** 2 * np.sqrt(2 / (n_samples - 1))
-    assert abs(samples.var() - ref.var()) < var_tol, (
-        f"Variances differ by {abs(samples.var() - ref.var()):.4f}, "
-        f"tolerance {var_tol:.4f}"
-    )
+    var_tol = 5 * samples.var() ** 2 * np.sqrt(2 / (n - 1))
+    assert abs(samples.var() - ref.var()) < var_tol
 
-    # --- Two-sample KS test ---
-    ks_stat, p_value = ks_2samp(samples, ref)
-    assert p_value > 0.05, f"KS test failed: stat={ks_stat:.4f}, p={p_value:.4f}"
+    _, p = ks_2samp(samples, ref)
+    assert p > 0.05, f"KS test failed: p={p:.4f}"

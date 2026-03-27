@@ -313,13 +313,6 @@ def save_data(
     help="Initial learning rate for the Adam optimiser.",
 )
 @optgroup.option(
-    "--warmup_epochs",
-    default=50,
-    type=int,
-    show_default=True,
-    help="Number of epochs for linear learning-rate warm-up from 1% to 100%.",
-)
-@optgroup.option(
     "--ema_alpha",
     default=0.01,
     type=float,
@@ -414,7 +407,6 @@ def train(
     num_bins: int,
     batch_size: int,
     max_epochs: int,
-    warmup_epochs: int,
     ema_alpha: float,
     learning_rate: float,
     stop_after_epochs: int,
@@ -480,7 +472,6 @@ def train(
         tensorboard_dir=tensorboard_dir,
         scheduler_patience=scheduler_patience,
         compile=compile_model,
-        warmup_epochs=warmup_epochs,
         ema_alpha=ema_alpha,
     )
 
