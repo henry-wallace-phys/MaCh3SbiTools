@@ -119,7 +119,7 @@ def training_config(model_save_path):
         save_path=model_save_path,
         learning_rate=0.001,
         batch_size=256,
-        max_epochs=100,
+        max_epochs=10,
         autosave_every=500,
         print_interval=100,
         show_progress=True,

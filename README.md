@@ -1,4 +1,4 @@
-# `MaCh3 SBI Tools` Simulation Based Inference with Neutrinos
+# <img src="docs/_static/mach3sbi_logo.png" alt="MaCh3" align="center" width="100"/> `MaCh3 SBI Tools` Simulation Based Inference with Neutrinos
 
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![codecov](https://codecov.io/github/henry-wallace-phys/mach3sbitools/graph/badge.svg?token=LY1UV4USFH)](https://codecov.io/github/henry-wallace-phys/mach3sbitools)
@@ -13,6 +13,8 @@ MaCh3 SBI Tools is a package used to perform
 Bayesian Simulation based inference with a flexible simulator and training setup
 using tools from the [SBI](https://github.com/sbi-dev/sbi) \[[1](#References)\] package. The simulator
 is designed to work primarily with [MaCh3](https://github.com/mach3-software/MaCh3/tree/develop) \[[2](#References)\].
+
+Training is done using [pyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) allowing for the effective use of multiple GPUs.
 
 For full documentation see: https://henry-wallace-phys.github.io/MaCh3SbiTools/
 

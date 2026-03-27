@@ -19,26 +19,43 @@ needed — it is read directly from the checkpoint::
     samples = handler.sample_posterior(10_000, x_observed)
 """
 
+import os
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
+import lightning
 import numpy as np
 import torch
 import torch.nn as nn
+from lightning.pytorch.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
+from lightning.pytorch.loggers import TensorBoardLogger
 from sbi.inference import NPE, DirectPosterior
 from sbi.neural_nets import posterior_nn
 from torch.utils.data import TensorDataset
 
+from mach3sbitools.data_loaders import SBIDataModule
 from mach3sbitools.data_loaders.paraket_dataloader import ParaketDataset
+from mach3sbitools.inference.lightning_module import SBILightningModule
 from mach3sbitools.simulator import load_prior
 from mach3sbitools.types import SimulatorData
 from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
 from mach3sbitools.utils.device_handler import TorchDeviceHandler
 from mach3sbitools.utils.logger import get_logger
 
-from .training import SBITrainer
-
 logger = get_logger()
+torch.set_float32_matmul_precision("medium")
+
+
+def _select_accelerator_and_strategy():
+    if torch.cuda.is_available():
+        return "gpu", "ddp"
+    if torch.backends.mps.is_available():
+        return "mps", "auto"  # DDP not supported
+    return "cpu", "auto"
 
 
 class InferenceHandler:
@@ -46,8 +63,8 @@ class InferenceHandler:
     High-level interface for NPE training and posterior sampling.
 
     Manages the full inference pipeline: loading simulations from disk,
-    building and training an NPE density estimator, and drawing posterior
-    samples conditioned on observed data.
+    building and training an NPE density estimator via PyTorch Lightning,
+    and drawing posterior samples conditioned on observed data.
     """
 
     def __init__(
@@ -61,7 +78,8 @@ class InferenceHandler:
         :param prior_path: Path to a pickled :class:`~mach3sbitools.simulator.Prior`
             file produced by :func:`~mach3sbitools.simulator.create_prior`.
         :param nuisance_pars: fnmatch patterns for parameters to exclude.
-            Passed directly to :meth:`~mach3sbitools.simulator.Prior.set_nuisance_filter`.
+            Passed directly to
+            :meth:`~mach3sbitools.simulator.Prior.set_nuisance_filter`.
         """
         self.prior = load_prior(prior_path)
         self.parameter_names = self.prior.prior_data.parameter_names
@@ -99,7 +117,8 @@ class InferenceHandler:
 
     def load_training_data(self) -> None:
         """
-        Pre-load all feather files into RAM as a flat :class:`~torch.utils.data.TensorDataset`.
+        Pre-load all feather files into RAM as a flat
+        :class:`~torch.utils.data.TensorDataset`.
 
         Call once before :meth:`train_posterior`. Keeps data on CPU; the
         DataLoader handles GPU transfers via pinned memory.
@@ -117,8 +136,8 @@ class InferenceHandler:
         """
         Build the NPE inference object and density estimator network.
 
-        :param config: Architecture and hyperparameter settings.
-            See :class:`~mach3sbitools.utils.PosteriorConfig`.
+        :param config: Architecture and hyperparameter settings. See
+            :class:`~mach3sbitools.utils.PosteriorConfig`.
         """
         neural_net = posterior_nn(
             model=config.model,
@@ -135,8 +154,10 @@ class InferenceHandler:
         )
         logger.info(
             f"NPE created | {config.model} | "
-            f"hidden=[cyan]{config.hidden_features}[/] transforms=[cyan]{config.num_transforms}[/] "
-            f"blocks=[cyan]{config.num_blocks}[/] bins=[cyan]{config.num_bins}[/]"
+            f"hidden=[cyan]{config.hidden_features}[/] "
+            f"transforms=[cyan]{config.num_transforms}[/] "
+            f"blocks=[cyan]{config.num_blocks}[/] "
+            f"bins=[cyan]{config.num_bins}[/]"
         )
 
     # ── Training ──────────────────────────────────────────────────────────────
@@ -144,20 +165,45 @@ class InferenceHandler:
     def train_posterior(
         self,
         config: TrainingConfig,
-        model_config: Any | None = None,
+        model_config: PosteriorConfig | None = None,
     ) -> None:
         """
-        Train the density estimator using the custom :class:`~mach3sbitools.inference.SBITrainer`.
+        Train the density estimator using PyTorch Lightning.
 
-        :param config: Training loop settings.
-            See :class:`~mach3sbitools.utils.TrainingConfig`.
-        :param model_config: Any picklable model configuration (e.g.
-            :class:`~mach3sbitools.utils.PosteriorConfig`). When provided it is
-            embedded in every checkpoint so :meth:`load_posterior` requires no
-            config argument.
-        :raises ValueError: If :meth:`load_training_data` or
+        Constructs an
+        :class:`~mach3sbitools.inference.lightning_module.SBILightningModule`
+        and
+        :class:`~mach3sbitools.inference.lightning_datamodule.SBIDataModule`,
+        then delegates the full training loop to a
+        :class:`~lightning.pytorch.trainer.Trainer` configured for multi-GPU
+        DDP.
+
+        The number of nodes is read from the ``SLURM_NNODES`` environment
+        variable when present, falling back to ``1`` for single-node runs.
+        GPU detection is automatic — Lightning will use all visible GPUs or
+        fall back to CPU if none are available.
+
+        Checkpoints are written by a
+        :class:`~lightning.pytorch.callbacks.ModelCheckpoint` callback and
+        are self-contained (architecture + weights). Early stopping monitors
+        ``ema_val_loss`` with a patience of ``config.stop_after_epochs``.
+
+        After training completes, :attr:`_density_estimator` is set to the
+        model at the best checkpoint and placed in eval mode so
+        :meth:`sample_posterior` can be called immediately.
+
+        :param config: Training loop settings. See
+            :class:`~mach3sbitools.utils.config.TrainingConfig`.
+        :param model_config: Architecture configuration embedded in every
+            checkpoint. When ``None`` the checkpoint will not be
+            self-contained and ``posterior_config`` must be supplied to
+            :meth:`load_posterior`.
+        :raises ValueError: If :meth:`load_training_data` has not been called.
+        :raises ValueError: If :meth:`create_posterior` has not been called.
+        :raises ValueError: If ``config.resume_checkpoint`` is set but
             :meth:`create_posterior` has not been called.
         """
+
         if self._tensor_dataset is None:
             raise ValueError("Call load_training_data() before train_posterior().")
 
@@ -174,16 +220,62 @@ class InferenceHandler:
         sample_x = self._tensor_dataset.tensors[1][:10]
         density_estimator = self.inference._build_neural_net(sample_theta, sample_x)
 
-        trainer = SBITrainer(
-            dataset=self._tensor_dataset,
-            config=config,
-            device=self.device_handler.device,
-            model_config=model_config,
+        lightning_module = SBILightningModule(density_estimator, config, model_config)
+        data_module = SBIDataModule(self._tensor_dataset, config)
+
+        callbacks = [
+            EarlyStopping(
+                monitor="ema_val_loss",
+                patience=config.stop_after_epochs,
+                mode="min",
+            ),
+            ModelCheckpoint(
+                dirpath=(
+                    config.save_path.parent / "checkpoints"
+                    if config.save_path
+                    else None
+                ),
+                filename="{epoch}-{ema_val_loss:.4f}",
+                monitor="ema_val_loss",
+                save_top_k=3,
+                every_n_epochs=config.autosave_every,
+                save_last=True,
+            ),
+            LearningRateMonitor(logging_interval="epoch"),
+        ]
+
+        tb_logger = (
+            TensorBoardLogger(save_dir=str(config.tensorboard_dir))
+            if config.tensorboard_dir
+            else True
         )
-        self._density_estimator = trainer.train(
-            density_estimator,
-            resume_checkpoint=config.resume_checkpoint,
+
+        acc, strat = _select_accelerator_and_strategy()
+
+        trainer = lightning.Trainer(
+            max_epochs=config.max_epochs,
+            callbacks=callbacks,
+            logger=tb_logger,
+            precision="bf16-mixed" if config.use_amp else "32-true",
+            gradient_clip_val=5.0,
+            enable_progress_bar=config.show_progress,
+            log_every_n_steps=50,
+            strategy=strat,
+            accelerator=acc,
+            devices="auto",
+            num_nodes=int(os.environ.get("SLURM_NNODES", 1)),
         )
+
+        trainer.fit(
+            lightning_module,
+            datamodule=data_module,
+            ckpt_path=(
+                str(config.resume_checkpoint) if config.resume_checkpoint else None
+            ),
+        )
+
+        self._density_estimator = lightning_module.model
+        self._density_estimator.eval()
 
     # ── Posterior sampling ────────────────────────────────────────────────────
 
@@ -239,19 +331,21 @@ class InferenceHandler:
         """
         Load a trained density estimator from a checkpoint file.
 
-        The ``PosteriorConfig`` is read from the checkpoint's ``"model_config"``
-        key. If *posterior_config* is also supplied it is silently ignored —
-        the checkpoint is the authoritative source of truth for the model
-        architecture, preventing silent mismatches.
+        The ``PosteriorConfig`` is read from the checkpoint's
+        ``"model_config"`` key. If *posterior_config* is also supplied it is
+        silently ignored — the checkpoint is the authoritative source of
+        truth for the model architecture, preventing silent mismatches.
 
         Supports both best-model state dicts (plain ``state_dict``) and
         autosave checkpoints (dicts with a ``"model_state"`` key).
 
-        :param checkpoint_path: Path to a ``.pt`` / ``.ckpt`` checkpoint file.
+        :param checkpoint_path: Path to a ``.pt`` / ``.ckpt`` checkpoint
+            file.
         :param posterior_config: Ignored when the checkpoint contains a
-            ``"model_config"`` entry (i.e. any checkpoint produced by a current
-            trainer). Accepted as a keyword only for backwards compatibility
-            with older checkpoints that pre-date self-contained saves.
+            ``"model_config"`` entry (i.e. any checkpoint produced by a
+            current trainer). Accepted as a keyword only for backwards
+            compatibility with older checkpoints that pre-date self-contained
+            saves.
         :raises FileNotFoundError: If *checkpoint_path* does not exist.
         :raises ValueError: If no model config can be found in the checkpoint
             and none was supplied.
@@ -264,8 +358,6 @@ class InferenceHandler:
 
         if isinstance(ckpt, dict) and "model_state" in ckpt:
             state_dict = ckpt["model_state"]
-            # torch.compile() prefixes every key with "_orig_mod." — strip it so
-            # the state dict loads cleanly into an uncompiled model.
             if any(k.startswith("_orig_mod.") for k in state_dict):
                 state_dict = {
                     k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
@@ -275,20 +367,19 @@ class InferenceHandler:
                 )
             logger.info(f"Loading autosave checkpoint from epoch {ckpt['epoch']}")
 
-            # Checkpoint config always wins; fall back to caller-supplied config
-            # only for checkpoints that pre-date self-contained saves.
             config: PosteriorConfig | None = (
                 ckpt.get("model_config") or posterior_config
             )
             if config is None:
                 raise ValueError(
-                    "Checkpoint does not contain a model_config and none was supplied. "
-                    "Pass posterior_config= explicitly for old checkpoints."
+                    "Checkpoint does not contain a model_config and none was "
+                    "supplied. Pass posterior_config= explicitly for old checkpoints."
                 )
             if ckpt.get("model_config") and posterior_config is not None:
                 logger.warning(
-                    "Both a checkpoint model_config and a posterior_config were provided. "
-                    "The checkpoint config will be used — the supplied config is ignored."
+                    "Both a checkpoint model_config and a posterior_config were "
+                    "provided. The checkpoint config will be used — the supplied "
+                    "config is ignored."
                 )
         else:
             state_dict = ckpt
@@ -302,10 +393,6 @@ class InferenceHandler:
 
         self.create_posterior(config)
 
-        # Infer dims directly from the state dict — more reliable than
-        # querying the prior, which only knows about theta.
-        # The embedding net's running-mean has shape [x_dim]; the initial
-        # autoregressive layer's weight has shape [hidden, theta_dim].
         try:
             x_dim = state_dict["net._embedding_net.0._mean"].shape[0]
             theta_dim = next(
@@ -336,13 +423,17 @@ class InferenceHandler:
 
     def get_log_likelihood(
         self, theta: SimulatorData, x: list[float] | np.ndarray, **kwargs
-    ):
-        """Get the loglikelihood for a model
+    ) -> torch.Tensor:
+        """
+        Evaluate the log-likelihood of *theta* given observed data *x*.
 
-        :param theta: Input sampled points
-        :param x: Data point
-        :raises ValueError: If you've not trained anything
-        :return: The log-probability for the sampled points
+        :param theta: Sampled parameter array of shape
+            ``(n_samples, n_params)``.
+        :param x: Observed data vector *x_o*.
+        :param kwargs: Additional keyword arguments forwarded to
+            ``sbi.posterior.log_prob``.
+        :raises ValueError: If no density estimator has been trained or loaded.
+        :returns: Log-probability tensor of shape ``(n_samples,)``.
         """
         self.build_posterior()
 
@@ -352,12 +443,10 @@ class InferenceHandler:
         x_tensor = torch.tensor(
             np.array([x]), dtype=torch.float32, device=self.device_handler.device
         )
-
         theta_tensor = torch.tensor(
             np.array(theta), dtype=torch.float32, device=self.device_handler.device
         )
 
-        # It will be this, this just stops mypy complaining!
         posterior = cast(DirectPosterior, self.posterior)
 
         return cast(

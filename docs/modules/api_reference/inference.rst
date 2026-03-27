@@ -6,12 +6,5 @@ Inference
 
 Trainer
 -------
-.. autoclass:: mach3sbitools.inference.SBITrainer
-   :members:
-
-.. autofunction:: mach3sbitools.inference.training.save_checkpoint
-
-TensorBoard
------------
-.. autoclass:: mach3sbitools.inference.tensorboard_writer.TensorBoardWriter
+.. autoclass:: mach3sbitools.inference.lightning_module
    :members:

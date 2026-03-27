@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "2.1.4"
+version = "3.0.0"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,7 +25,8 @@ dependencies = [
     "pytest-cov",
     "ruff",
     "mypy",
-    "sphinx"
+    "sphinx",
+    "lightning"
 ]
 
 [project.optional-dependencies]
@@ -45,7 +46,11 @@ addopts = "-v --tb=short --cov=mach3sbitools tests/  --cov-report=term-missing"
 markers = [
     "slow: mark a test that takes a long time to run.",
 ]
-
+# We really don't need these in testing as it complains
+# about the tiny test models!
+filterwarnings = [
+    "ignore::UserWarning:lightning.pytorch"
+]
 
 [tool.coverage.run]
 source = ["mach3sbitools"]
