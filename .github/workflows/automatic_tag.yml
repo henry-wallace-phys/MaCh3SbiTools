@@ -24,3 +24,11 @@ jobs:
             with open('pyproject.toml', 'rb') as f:
                 print(tomllib.load(f)['project']['version'])
             "
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+              --repo="${{ github.repository }}" \
+              --title="${{ github.ref_name }}" \
+              --generate-notes
