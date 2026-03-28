@@ -14,9 +14,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      - name: Display Python version
-        run: python3.11 -c "import sys; print(sys.version)"
-
       - name: Install dependencies
         run: |
           python3.11 -m pip install --upgrade pip
