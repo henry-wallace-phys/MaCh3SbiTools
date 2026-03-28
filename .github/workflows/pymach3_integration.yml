@@ -15,21 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Display Python version
-        run: python -c "import sys; print(sys.version)"
+        run: python3 -c "import sys; print(sys.version)"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install .
+          python3 -m pip install --upgrade pip
+          python3 -m pip install .
 
       - name: Clone MaCh3
         env:
-          CMAKE_ARGS: "-DPYTHON_ENABLED=ON -DMaCh3_Branch=feature_python_bindings"
+          CMAKE_ARGS: "-DPYTHON_ENABLED=ON -DMaCh3_Branch=feature_python_bindings -DUse"
         run: |
           cd /opt/
           git clone --branch "feature_python_build" https://github.com/mach3-software/MaCh3Tutorial.git MaCh3Tutorial
           cd MaCh3Tutorial
-          pip install .
+          python3 -m pip install .
 
       - name: Test with pytest
         env:
