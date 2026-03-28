@@ -42,5 +42,6 @@ jobs:
         run: |
           cd /opt/MaCh3Tutorial
           $WORKSPACE/.venv/bin/pytest $WORKSPACE/tests \
-          --junitxml=junit/test-results.xml \
-          --cov=mach3sbitools --cov-report=xml --cov-report=term-missing
+            --override-ini="addopts=" \
+            --junitxml=junit/test-results.xml \
+            --cov=mach3sbitools --cov-report=xml --cov-report=term-missing
