@@ -1,5 +1,5 @@
 ---
-name: unit-test
+name: pyMaCh3-integration
 on:
   pull_request:
     branches:
