@@ -14,10 +14,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Install dependencies
         run: |
-          python3.11 -m pip install --upgrade pip
-          python3.11 -m pip install .
+          uv python install 3.11
+          uv pip install --python 3.11 --system .
 
       - name: Clone MaCh3
         env:
@@ -26,7 +30,7 @@ jobs:
           cd /opt/
           git clone --branch "feature_python_build" https://github.com/mach3-software/MaCh3Tutorial.git MaCh3Tutorial
           cd MaCh3Tutorial
-          python3.11 -m pip install .
+          uv pip install --python 3.11 --system .
 
       - name: Test with pytest
         env:
