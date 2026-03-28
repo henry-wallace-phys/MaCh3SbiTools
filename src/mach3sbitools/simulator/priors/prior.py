@@ -137,7 +137,7 @@ class Prior(torch.distributions.Distribution):
         # ── Flat mask ──────────────────────────────────────────────────────
         # Guard against None so the tensor conversion doesn't crash.
         flat_msk = flat_msk if flat_msk is not None else [False] * n_params
-        flat_mask = self.device_handler.to_tensor(flat_msk) & ~cyclical_mask
+        flat_mask = self.device_handler.to_tensor(flat_msk).bool() & ~cyclical_mask
         if any(flat_mask):
             self._priors.append(self._get_flat_map(flat_mask))
 

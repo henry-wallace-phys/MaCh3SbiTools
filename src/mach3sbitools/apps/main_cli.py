@@ -41,6 +41,9 @@ _LOGGER_OPTIONS = [
 
 _SIMULATOR_OPTIONS = [
     click.option(
+        "--output_file", "-o", help="Name of file to output to", required=True
+    ),
+    click.option(
         "--simulator_module",
         "-m",
         help="Dotted Python module path containing the simulator class (e.g. 'mypackage.simulator').",
@@ -59,7 +62,6 @@ _SIMULATOR_OPTIONS = [
         help="Path to the simulator configuration file (e.g. a MaCh3 fitter YAML).",
         required=True,
     ),
-    click.option("--output_file", "-o", help="Path to write the output file."),
     click.option(
         "--nuisance_pars",
         "-p",
@@ -89,7 +91,7 @@ def cli(log_file: Path | None, log_level: str) -> None:
     MaCh3Logger(
         name="mach3sbi",
         level=log_level,
-        log_file=log_file,
+        log_file=Path(log_file) if log_file else None,
     )
 
 
@@ -120,9 +122,9 @@ def save_prior(
             -m mypackage.simulator -s MySimulator \\
             -c config.yaml -o prior.pkl
     """
-    injector = get_simulator(simulator_module, simulator_class, config)
+    injector = get_simulator(simulator_module, simulator_class, Path(config))
     prior = create_prior(injector, nuisance_pars, cyclical_pars)
-    prior.save(output_file)
+    prior.save(Path(output_file))
 
 
 # ── simulate ──────────────────────────────────────────────────────────────────
@@ -174,7 +176,9 @@ def simulate(
         cyclical_pars=cyclical_pars,
     )
     x, theta = simulator.simulate(n_simulations)
-    simulator.save(output_file, x, theta, prior_file)
+    simulator.save(
+        Path(output_file), x, theta, Path(prior_file) if prior_file else None
+    )
 
 
 # ── save_data ─────────────────────────────────────────────────────────────────
@@ -208,11 +212,11 @@ def save_data(
     simulator = Simulator(
         simulator_module,
         simulator_class,
-        config,
+        Path(config),
         nuisance_pars=nuisance_pars,
         cyclical_pars=cyclical_pars,
     )
-    simulator.save_data(output_file)
+    simulator.save_data(Path(output_file))
 
 
 # ── train ─────────────────────────────────────────────────────────────────────
@@ -465,18 +469,18 @@ def train(
         validation_fraction=validation_fraction,
         num_workers=num_workers,
         autosave_every=autosave_every,
-        resume_checkpoint=resume_checkpoint,
+        resume_checkpoint=Path(resume_checkpoint) if resume_checkpoint else None,
         use_amp=use_amp,
         print_interval=print_interval,
         show_progress=show_progress,
-        tensorboard_dir=tensorboard_dir,
+        tensorboard_dir=Path(tensorboard_dir) if tensorboard_dir else None,
         scheduler_patience=scheduler_patience,
         compile=compile_model,
         ema_alpha=ema_alpha,
     )
 
-    inference_handler = InferenceHandler(prior_path, nuisance_pars)
-    inference_handler.set_dataset(dataset)
+    inference_handler = InferenceHandler(Path(prior_path), nuisance_pars)
+    inference_handler.set_dataset(Path(dataset))
     inference_handler.load_training_data()
     inference_handler.create_posterior(posterior_config)
     # model_config is passed through so every checkpoint is self-contained
@@ -569,8 +573,8 @@ def inference(
 
     # PosteriorConfig is recovered from the checkpoint — the caller does not
     # need to supply (and cannot accidentally mismatch) architecture flags.
-    inference_handler = InferenceHandler(prior_path, nuisance_pars)
-    inference_handler.load_posterior(posterior, posterior_config=None)
+    inference_handler = InferenceHandler(Path(prior_path), nuisance_pars)
+    inference_handler.load_posterior(Path(posterior), posterior_config=None)
 
     parameter_names = inference_handler.prior.prior_data.parameter_names
     logger.info(parameter_names)

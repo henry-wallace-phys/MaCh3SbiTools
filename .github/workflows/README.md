@@ -13,6 +13,10 @@ whenever a PR to `main` is made
 
 Generates documentation when a PR is accepted and uploads to https://henry-wallace-phys.github.io/MaCh3SbiTools/
 
+## pymach3_integration
+
+Tests in integration with pyMaCh3
+
 ## label
 
 Labels PRs based on the components in MaCh3SBITools they've changed. The list can be found in [labeler.yml](../labeler.yml)

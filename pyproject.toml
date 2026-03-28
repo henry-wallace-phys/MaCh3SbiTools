@@ -45,6 +45,7 @@ mach3sbi = "mach3sbitools.apps.main_cli:cli"
 addopts = "-v --tb=short --cov=mach3sbitools tests/  --cov-report=term-missing"
 markers = [
     "slow: mark a test that takes a long time to run.",
+    "mach3tutorial: mark a test that requires MaCh3Tutorial",
 ]
 # We really don't need these in testing as it complains
 # about the tiny test models!
@@ -54,7 +55,9 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["mach3sbitools"]
-omit = ["tests/*", "scripts/*", "tutorial/*"]
+# We also ignore examples here, there will be a few tests but there's no point doing
+# a full integration test!
+omit = ["tests/*", "scripts/*", "tutorial/*", "src/mach3sbitools/examples/*"]
 
 # * See https://docs.astral.sh/ruff/rules/ for details on Ruff's linting options
 [tool.ruff.lint]

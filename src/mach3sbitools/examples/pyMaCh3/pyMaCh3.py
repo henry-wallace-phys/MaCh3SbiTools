@@ -1,0 +1,171 @@
+from pathlib import Path
+
+import numpy as np
+from yaml import safe_load
+
+from .helpers import process_parameter_yamls
+
+try:
+    import pyMaCh3_tutorial as m3
+
+    HAS_PYMACH3 = True
+except ImportError:
+    HAS_PYMACH3 = False
+
+
+class pyMaCh3Simulator:
+    def __init__(self, fitter_config: Path):
+        """
+        PyMaCh3 simulator object, a helper function around the MaCh3 simulator implementation
+        :param fitter_config: MaCh3 configuration file
+        """
+        if not HAS_PYMACH3:
+            raise ImportError(
+                "Trying to instantiate pyMaCh3Simulator without a pyMaCh3 install!"
+            )
+
+        # Read in MaCh3 Config
+        fitter_config = Path(fitter_config)
+        if not fitter_config.is_file():
+            raise FileNotFoundError(fitter_config)
+
+        with open(fitter_config) as f:
+            yaml_cfg = safe_load(f)
+
+        # We assume a single parameter config is used
+        systematic_configs, additional_fixed, tune = self._get_parameter_config(
+            yaml_cfg
+        )
+        self.parameter_handler = m3.parameters.ParameterHandlerGeneric(
+            [str(s) for s in systematic_configs]
+        )
+
+        # We'll use this in a minute! (contains everything about or systematic model!)
+        self.parameter_properties = process_parameter_yamls(
+            systematic_configs, additional_fixed, tune
+        )
+
+        # We'll use this a lot
+        self._fix_mask = ~self.parameter_properties.fixed
+        self.n_params = len(self.parameter_properties[self._fix_mask])
+
+        # Saves doing this every time!
+        self._parameter_properties_masked = self.parameter_properties[self._fix_mask]
+
+        # Now we load in the samples
+        self.samples = self._get_sample_handlers(yaml_cfg, self.parameter_handler)
+
+        self._data = np.concatenate([s.get_data_hist(0)[0] for s in self.samples])
+        # Another helper
+        self.n_bins = len(self._data)
+
+    # -----------------
+    # Simulator protocol methods
+    # -----------------
+    def simulate(self, theta: list[float] | np.ndarray) -> np.ndarray:
+        """
+        Run the simulation step
+        :param theta: Parameter values
+        :return: Simulated data
+        """
+        self._set_parameter_values(theta)
+        return np.fromiter(
+            (b for s in self.samples for b in s.get_mc_hist(0)[0]),
+            dtype=float,
+            count=self.n_bins,
+        )
+
+    def get_parameter_names(self):
+        return self._parameter_properties_masked.names
+
+    def get_parameter_bounds(self):
+        return (
+            self._parameter_properties_masked.lower_bounds,
+            self._parameter_properties_masked.upper_bounds,
+        )
+
+    def get_is_flat(self, i: int):
+        return self._parameter_properties_masked.flat_priors[i]
+
+    def get_data_bins(self):
+        return self._data
+
+    def get_parameter_nominals(self):
+        return self._parameter_properties_masked.nominals
+
+    def get_parameter_errors(self):
+        return self._parameter_properties_masked.errors
+
+    def get_covariance_matrix(self):
+        return self._parameter_properties_masked.covariance
+
+    def get_log_likelihood(self, theta: list[float] | np.ndarray) -> float:
+        self._set_parameter_values(theta)
+        prior_llh: float = self.parameter_handler.calculate_likelihood()
+        if prior_llh > 1234567:
+            return float(-np.inf)
+
+        sample_llh: float = np.sum([s.get_likelihood() for s in self.samples])
+
+        return -sample_llh - prior_llh
+
+    # -----------------
+    # Helpers
+    # -----------------
+    @classmethod
+    def _get_parameter_config(cls, yaml_cfg: dict) -> tuple[list[Path], list[str], str]:
+        """
+        Gets the parameter config details from the main YAML cfg
+        :param yaml_cfg: Main yaml config
+        :return:
+        """
+        systematics = yaml_cfg.get("General", {}).get("Systematics")
+        if systematics is None:
+            raise ValueError("Systematics is required in fitter config")
+
+        systematic_configs = [Path(c) for c in systematics["XsecCovFile"]]
+        additional_fixed: list[str] = systematics.get("XsecFix", [])
+        tune: str = systematics.get("XsecTune", "Generated")
+
+        return systematic_configs, additional_fixed, tune
+
+    @classmethod
+    def _get_sample_handlers(
+        cls, yaml_cfg: dict, parameter_handler: m3.parameters.ParameterHandlerGeneric
+    ) -> list[m3.samples.SampleHandlerTutorial]:
+        """
+        Load in the samples from the MaCh3 fitter config
+        :param yaml_cfg: Main config
+        :param parameter_handler: A list of fitter configs
+        :return:
+        """
+        samples = yaml_cfg.get("General", {}).get("TutorialSamples")
+        if samples is None:
+            raise ValueError("TutorialSamples is required in fitter config")
+
+        return [
+            m3.samples.SampleHandlerTutorial(str(s), parameter_handler) for s in samples
+        ]
+
+    def _set_parameter_values(self, theta: list[float] | np.ndarray):
+        """
+        Set the parameter values to some value and reweight
+        :param theta:
+        :return:
+        """
+        # Cast to nd array
+        if isinstance(theta, list):
+            theta = np.array(theta)
+
+        if len(theta) != self.n_params:
+            raise ValueError(f"theta must have {self.n_params} elements")
+
+        # Make a copy (little expensive)
+        set_values = self.parameter_properties.nominals.copy()
+        # Set non-fixed values
+        set_values[self._fix_mask] = theta
+
+        self.parameter_handler.set_parameters(set_values)
+
+        for sample in self.samples:
+            sample.reweight()
