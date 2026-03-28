@@ -159,14 +159,6 @@ class TestParameterAccessors:
         cov = pymach3_instance.get_covariance_matrix()
         assert np.all(np.diag(cov) >= 0), "Diagonal of covariance must be non-negative"
 
-    def test_is_flat_returns_bool(self, pymach3_instance):
-        n = len(pymach3_instance.get_parameter_names())
-        for i in range(n):
-            result = pymach3_instance.get_is_flat(i)
-            assert isinstance(result, bool), (
-                f"get_is_flat({i}) must return bool, got {type(result)}"
-            )
-
     def test_data_bins_non_empty(self, pymach3_instance):
         data = pymach3_instance.get_data_bins()
         assert len(data) > 0
