@@ -15,12 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Display Python version
-        run: python3 -c "import sys; print(sys.version)"
+        run: python3.11 -c "import sys; print(sys.version)"
 
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install .
+          python3.11 -m pip install --upgrade pip
+          python3.11 -m pip install .
 
       - name: Clone MaCh3
         env:
@@ -29,7 +29,7 @@ jobs:
           cd /opt/
           git clone --branch "feature_python_build" https://github.com/mach3-software/MaCh3Tutorial.git MaCh3Tutorial
           cd MaCh3Tutorial
-          python3 -m pip install .
+          python3.11 -m pip install .
 
       - name: Test with pytest
         env:
