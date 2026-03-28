@@ -122,9 +122,9 @@ def save_prior(
             -m mypackage.simulator -s MySimulator \\
             -c config.yaml -o prior.pkl
     """
-    injector = get_simulator(simulator_module, simulator_class, config)
+    injector = get_simulator(simulator_module, simulator_class, Path(config))
     prior = create_prior(injector, nuisance_pars, cyclical_pars)
-    prior.save(output_file)
+    prior.save(Path(output_file))
 
 
 # ── simulate ──────────────────────────────────────────────────────────────────

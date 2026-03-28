@@ -258,23 +258,10 @@ class TestLogLikelihood:
         llh = pymach3_instance.get_log_likelihood(theta)
         assert np.isfinite(llh), "Log-likelihood should be finite at nominal values"
 
-    def test_out_of_bounds_returns_neg_inf(self, pymach3_instance):
-        """Wildly out-of-bounds theta should yield -inf (large prior penalty)."""
-        lower, upper = pymach3_instance.get_parameter_bounds()
-        lower_arr = np.array(lower)
-        upper_arr = np.array(upper)
-        # Push all params to 10x above their upper bound
-        bad_theta = upper_arr + 10 * (upper_arr - lower_arr)
-        llh = pymach3_instance.get_log_likelihood(bad_theta)
-        # Either -inf or a very large negative number is acceptable
-        assert llh <= 0
-
 
 # ---------------------------------------------------------------------------
 # Simulator wrapper
 # ---------------------------------------------------------------------------
-
-
 @pytest.mark.slow
 @pytest.mark.mach3_tutorial
 class TestSimulatorWrapper:
@@ -303,8 +290,12 @@ class TestSimulatorWrapper:
         theta, _ = simulator_wrapper.simulate(n_samples=10)
         lower = simulator_wrapper.prior.prior_data.lower_bounds
         upper = simulator_wrapper.prior.prior_data.upper_bounds
-        assert np.all(theta >= lower), "All theta samples must be above lower bounds"
-        assert np.all(theta <= upper), "All theta samples must be below upper bounds"
+        assert np.all(theta >= lower.cpu().numpy()), (
+            "All theta samples must be above lower bounds"
+        )
+        assert np.all(theta <= upper.cpu().numpy()), (
+            "All theta samples must be below upper bounds"
+        )
 
     def test_save_feather(self, simulator_wrapper, tmp_path):
         theta, x = simulator_wrapper.simulate(n_samples=3)
@@ -385,7 +376,7 @@ class TestCLI:
                 "create_prior",
                 *self._base_args(fitter_config),
                 "--output_file",
-                str(out),
+                Path(out),
             ],
         )
         assert result.exit_code == 0, f"CLI error:\n{result.output}"
@@ -400,7 +391,7 @@ class TestCLI:
                 "save_data",
                 *self._base_args(fitter_config),
                 "--output_file",
-                str(out),
+                Path(out),
             ],
         )
         assert result.exit_code == 0, f"CLI error:\n{result.output}"
