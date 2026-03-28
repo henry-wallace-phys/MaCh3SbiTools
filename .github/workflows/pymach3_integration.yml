@@ -1,28 +1,45 @@
-- name: Install uv
-  uses: astral-sh/setup-uv@v5
+---
+name: pyMaCh3-integration
+on:
+  pull_request:
+    branches:
+      - main
 
-- name: Setup Virtualenv
-  run: |
-    uv python install 3.11
-    uv venv --python 3.11 .venv
+jobs:
+  build:
 
-- name: Install dependencies
-  run: uv pip install --python .venv .
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/mach3-software/mach3:alma9v1.3.0
 
-- name: Clone MaCh3
-  env:
-    CMAKE_ARGS: "-DPYTHON_ENABLED=ON -DMaCh3_Branch=feature_python_bindings"
-  run: |
-    cd /opt/
-    git clone --branch "feature_python_build" https://github.com/mach3-software/MaCh3Tutorial.git MaCh3Tutorial
-    cd MaCh3Tutorial
-    uv pip install --python $GITHUB_WORKSPACE/.venv .
+    steps:
+      - uses: actions/checkout@v5
 
-- name: Test with pytest
-  env:
-    MACH3: /opt/MaCh3Tutorial
-  run: |
-    cd /opt/MaCh3Tutorial
-    .venv/bin/pytest $GITHUB_WORKSPACE/MaCh3SbiTools \
-      --junitxml=junit/test-results.xml \
-      --cov=mach3sbitools --cov-report=xml --cov-report=term-missing
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Virtualenv
+        run: |
+          uv python install 3.11
+          uv venv --python 3.11 .venv
+
+      - name: Install dependencies
+        run: uv pip install --python .venv .
+
+      - name: Clone MaCh3
+        env:
+          CMAKE_ARGS: "-DPYTHON_ENABLED=ON -DMaCh3_Branch=feature_python_bindings"
+        run: |
+          cd /opt/
+          git clone --branch "feature_python_build" https://github.com/mach3-software/MaCh3Tutorial.git MaCh3Tutorial
+          cd MaCh3Tutorial
+          uv pip install --python $GITHUB_WORKSPACE/.venv .
+
+      - name: Test with pytest
+        env:
+          MACH3: /opt/MaCh3Tutorial
+        run: |
+          cd /opt/MaCh3Tutorial
+          .venv/bin/pytest $GITHUB_WORKSPACE/MaCh3SbiTools \
+            --junitxml=junit/test-results.xml \
+            --cov=mach3sbitools --cov-report=xml --cov-report=term-missing
