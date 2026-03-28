@@ -12,17 +12,19 @@ so they can be excluded from fast CI runs:
     pytest -m "not mach3_tutorial"
 """
 
+import pytest
+
+pytest.importorskip("pyMaCh3_tutorial")
+
 import os
 from pathlib import Path
 
 import numpy as np
-import pytest
 from click.testing import CliRunner
 
-pytest.importorskip("pyMaCh3_tutorial")
-
-from mach3sbitools.cli import cli  # adjust import path if your entry-point differs
-
+from mach3sbitools.apps.main_cli import (
+    cli,  # adjust import path if your entry-point differs
+)
 from mach3sbitools.examples.pyMaCh3 import pyMaCh3Simulator
 from mach3sbitools.simulator import Simulator, SimulatorProtocol
 
