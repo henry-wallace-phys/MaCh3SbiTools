@@ -55,6 +55,8 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["mach3sbitools"]
+# We also ignore examples here, there will be a few tests but there's no point doing
+# a full integration test!
 omit = ["tests/*", "scripts/*", "tutorial/*", "src/mach3sbitools/examples/*"]
 
 # * See https://docs.astral.sh/ruff/rules/ for details on Ruff's linting options

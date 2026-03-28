@@ -1,18 +1,19 @@
+import pytest
+
+pytest.importorskip("pyMaCh3_tutorial")
+
 import os
 from pathlib import Path
 
-import pytest
-
-from mach3sbitools.examples import pyMaCh3Simulator
+from mach3sbitools.examples.pyMaCh3 import pyMaCh3Simulator
 from mach3sbitools.simulator import Simulator, SimulatorProtocol
 
-test_possible = pyMaCh3Simulator is not None
 
-
+# The importer will return none
 @pytest.fixture(scope="module")
 def pymach3_simulator():
     return Simulator(
-        module_name="mach3sbitools.examples",
+        module_name="mach3sbitools.examples.pyMaCh3",
         class_name="pyMach3Simulator",
         config=Path(os.getenv("MACH3")) / "TutorialConfigs" / "FitterConfig.yaml",
     )
@@ -25,14 +26,12 @@ def pymach3_instance():
     )
 
 
-@pytest.mark.skipif(not test_possible, reason="pyMach3 is not installed")
 @pytest.mark.slow
 @pytest.mark.mach3_tutorial
 def test_protocol(pymach3_simulator):
     assert isinstance(pymach3_simulator.simulator_wrapper, SimulatorProtocol)
 
 
-@pytest.mark.skipif(not test_possible, reason="pyMach3 is not installed")
 @pytest.mark.slow
 @pytest.mark.mach3_tutorial
 def test_simulator(pymach3_simulator):
