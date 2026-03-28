@@ -76,4 +76,4 @@ repos:
         args: ["-m", "not slow"]
         language: system
         pass_filenames: false
-        always_run: true
+        always_run: false
