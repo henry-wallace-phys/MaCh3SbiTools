@@ -38,8 +38,9 @@ jobs:
       - name: Test with pytest
         env:
           MACH3: /opt/MaCh3Tutorial
+          WORKSPACE: /__w/MaCh3SbiTools/MaCh3SbiTools
         run: |
           cd /opt/MaCh3Tutorial
-          $GITHUB_WORKSPACE/.venv/bin/pytest $GITHUB_WORKSPACE/tests \
-            --junitxml=junit/test-results.xml \
-            --cov=mach3sbitools --cov-report=xml --cov-report=term-missing
+          $WORKSPACE/.venv/bin/pytest $WORKSPACE/tests \
+          --junitxml=junit/test-results.xml \
+          --cov=mach3sbitools --cov-report=xml --cov-report=term-missing
