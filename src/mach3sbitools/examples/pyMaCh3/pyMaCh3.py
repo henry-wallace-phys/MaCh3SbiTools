@@ -1,11 +1,16 @@
 from pathlib import Path
 
 import numpy as np
-from pyMaCh3_tutorial.parameters import ParameterHandlerGeneric
-from pyMaCh3_tutorial.samples import SampleHandlerTutorial
 from yaml import safe_load
 
 from .helpers import process_parameter_yamls
+
+try:
+    import pyMaCh3_tutorial as m3
+
+    HAS_PYMACH3 = True
+except ImportError:
+    HAS_PYMACH3 = False
 
 
 class pyMaCh3Simulator:
@@ -14,6 +19,10 @@ class pyMaCh3Simulator:
         PyMaCh3 simulator object, a helper function around the MaCh3 simulator implementation
         :param fitter_config: MaCh3 configuration file
         """
+        if not HAS_PYMACH3:
+            raise ImportError(
+                "Trying to instantiate pyMaCh3Simulator without a pyMaCh3 install!"
+            )
 
         # Read in MaCh3 Config
         fitter_config = Path(fitter_config)
@@ -27,11 +36,13 @@ class pyMaCh3Simulator:
         systematic_configs, additional_fixed, tune = self._get_parameter_config(
             yaml_cfg
         )
-        self.parameter_handler = ParameterHandlerGeneric(systematic_configs)
+        self.parameter_handler = m3.parameters.ParameterHandlerGeneric(
+            [str(s) for s in systematic_configs]
+        )
 
         # We'll use this in a minute! (contains everything about or systematic model!)
         self.parameter_properties = process_parameter_yamls(
-            yaml_cfg, additional_fixed, tune
+            systematic_configs, additional_fixed, tune
         )
 
         # We'll use this a lot
@@ -44,7 +55,7 @@ class pyMaCh3Simulator:
         # Now we load in the samples
         self.samples = self._get_sample_handlers(yaml_cfg, self.parameter_handler)
 
-        self._data = np.concatenate([s.get_data_hist()[0] for s in self.samples])
+        self._data = np.concatenate([s.get_data_hist(0)[0] for s in self.samples])
         # Another helper
         self.n_bins = len(self._data)
 
@@ -59,7 +70,7 @@ class pyMaCh3Simulator:
         """
         self._set_parameter_values(theta)
         return np.fromiter(
-            (b for s in self.samples for b in s.get_mc_hist()[0]),
+            (b for s in self.samples for b in s.get_mc_hist(0)[0]),
             dtype=float,
             count=self.n_bins,
         )
@@ -74,7 +85,7 @@ class pyMaCh3Simulator:
         )
 
     def get_is_flat(self, i: int):
-        return self._parameter_properties_masked.flat[i]
+        return self._parameter_properties_masked.flat_priors[i]
 
     def get_data_bins(self):
         return self._data
@@ -86,7 +97,7 @@ class pyMaCh3Simulator:
         return self._parameter_properties_masked.errors
 
     def get_covariance_matrix(self):
-        return self._parameter_properties_masked.covariance_matrix
+        return self._parameter_properties_masked.covariance
 
     def get_log_likelihood(self, theta: list[float] | np.ndarray) -> float:
         self._set_parameter_values(theta)
@@ -108,7 +119,7 @@ class pyMaCh3Simulator:
         :param yaml_cfg: Main yaml config
         :return:
         """
-        systematics = yaml_cfg.get("Systematics")
+        systematics = yaml_cfg.get("General", {}).get("Systematics")
         if systematics is None:
             raise ValueError("Systematics is required in fitter config")
 
@@ -120,8 +131,8 @@ class pyMaCh3Simulator:
 
     @classmethod
     def _get_sample_handlers(
-        cls, yaml_cfg: dict, parameter_handler: ParameterHandlerGeneric
-    ) -> list[SampleHandlerTutorial]:
+        cls, yaml_cfg: dict, parameter_handler: m3.parameters.ParameterHandlerGeneric
+    ) -> list[m3.samples.SampleHandlerTutorial]:
         """
         Load in the samples from the MaCh3 fitter config
         :param yaml_cfg: Main config
@@ -132,9 +143,11 @@ class pyMaCh3Simulator:
         if samples is None:
             raise ValueError("TutorialSamples is required in fitter config")
 
-        return [SampleHandlerTutorial(s, parameter_handler) for s in samples]
+        return [
+            m3.samples.SampleHandlerTutorial(str(s), parameter_handler) for s in samples
+        ]
 
-    def _set_parameter_values(self, theta: list[str] | np.ndarray):
+    def _set_parameter_values(self, theta: list[float] | np.ndarray):
         """
         Set the parameter values to some value and reweight
         :param theta:

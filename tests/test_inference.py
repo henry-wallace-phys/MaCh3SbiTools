@@ -306,7 +306,6 @@ class TestInferenceHandlerCheckpoints:
     def test_load_posterior_autosave_format(
         self, prior_save, posterior_config, tmp_path
     ):
-
         prior = load_prior(prior_save)
         neural_net = posterior_nn(
             model=posterior_config.model,
@@ -338,7 +337,6 @@ class TestInferenceHandlerCheckpoints:
     def test_load_posterior_warns_when_both_configs_provided(
         self, prior_save, posterior_config, tmp_path
     ):
-
         prior = load_prior(prior_save)
         neural_net = posterior_nn(
             model=posterior_config.model,

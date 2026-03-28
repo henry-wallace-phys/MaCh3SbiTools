@@ -286,7 +286,6 @@ class TestSBIDataModuleDataLoaders:
         assert isinstance(dm.train_dataloader(), DataLoader)
 
     def test_val_dataloader_returns_dataloader(self, tmp_path):
-
         dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
         dm.setup()
         assert isinstance(dm.val_dataloader(), DataLoader)
@@ -363,7 +362,6 @@ class TestLightningTrainingIntegration:
         assert module.ema_val_loss != float("inf")
 
     def test_checkpoint_written(self, tmp_path):
-
         cfg = _minimal_config(tmp_path, max_epochs=2, autosave_every=1)
         module = SBILightningModule(_tiny_model(), cfg)
         dm = SBIDataModule(_tiny_dataset(n=200), cfg)
@@ -396,7 +394,6 @@ class TestInferenceHandlerLightning:
     def test_train_posterior_raises_without_tensor_dataset(
         self, prior_save, posterior_config, training_config
     ):
-
         handler = InferenceHandler(prior_save)
         handler.create_posterior(posterior_config)
         with pytest.raises(ValueError, match="load_training_data"):
@@ -413,7 +410,6 @@ class TestInferenceHandlerLightning:
     def test_train_posterior_raises_resume_without_inference(
         self, prior_save, tmp_path
     ):
-
         handler = InferenceHandler(prior_save)
         handler._tensor_dataset = TensorDataset(torch.zeros(10, 4), torch.zeros(10, 6))
         cfg = TrainingConfig(resume_checkpoint=Path("/some/ckpt.pt"))

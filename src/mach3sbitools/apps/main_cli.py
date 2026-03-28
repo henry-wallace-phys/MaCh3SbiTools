@@ -41,6 +41,9 @@ _LOGGER_OPTIONS = [
 
 _SIMULATOR_OPTIONS = [
     click.option(
+        "--output_file", "-o", help="Name of file to output to", required=True
+    ),
+    click.option(
         "--simulator_module",
         "-m",
         help="Dotted Python module path containing the simulator class (e.g. 'mypackage.simulator').",
@@ -174,7 +177,7 @@ def simulate(
         cyclical_pars=cyclical_pars,
     )
     x, theta = simulator.simulate(n_simulations)
-    simulator.save(output_file, x, theta, prior_file)
+    simulator.save(Path(output_file), x, theta, prior_file)
 
 
 # ── save_data ─────────────────────────────────────────────────────────────────

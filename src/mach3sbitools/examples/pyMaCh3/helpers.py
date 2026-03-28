@@ -44,17 +44,17 @@ class ProcessedSystematics:
 
 
 def _read_individual_yaml(
-    paramater_yaml: Path, tune: str = "Generated"
+    parameter_yaml: Path, tune: str = "Generated"
 ) -> list[Systematic]:
     """
     Read a YAML file
     :param paramater_yaml:
     :return:
     """
-    if not paramater_yaml.is_file():
-        raise FileExistsError(f"Cannot find file called {paramater_yaml}")
+    if not Path(parameter_yaml).is_file():
+        raise FileExistsError(f"Cannot find file called {parameter_yaml}")
 
-    with open(paramater_yaml) as f:
+    with open(parameter_yaml) as f:
         yaml_data = yaml.safe_load(f)
 
     syst_arr = yaml_data.get("Systematics")
@@ -62,18 +62,17 @@ def _read_individual_yaml(
     if syst_arr is None:
         return []
 
-    correlations: list[dict[str, float]] = syst_arr.get("Correlations", [])
-
     return [
         Systematic(
-            name=s["Names"]["FancyName"],
-            error=s["Error"],
-            nominal=s["ParameterValues"][tune],
-            bounds=s["ParameterBounds"],
-            fixed=s.get("FixParam", False),
-            flat_prior=s.get("FlatPrior", False),
+            name=s["Systematic"]["Names"]["FancyName"],
+            error=s["Systematic"]["Error"],
+            nominal=s["Systematic"]["ParameterValues"][tune],
+            bounds=s["Systematic"]["ParameterBounds"],
+            fixed=s["Systematic"].get("FixParam", False),
+            flat_prior=s["Systematic"].get("FlatPrior", False),
             correlations={
-                next(iter(d.keys())): next(iter(d.values())) for d in correlations
+                next(iter(d.keys())): next(iter(d.values()))
+                for d in s["Systematic"].get("Correlations", [])
             },
         )
         for s in syst_arr
@@ -94,7 +93,7 @@ def process_parameter_yamls(
 
     n_systs = len(syst_arr)
 
-    names = np.empty(n_systs, dtype=str)
+    names = np.empty(n_systs, dtype=object)
     errors = np.empty(n_systs, dtype=float)
     nominals = np.empty(n_systs, dtype=float)
     lower_bounds = np.empty(n_systs, dtype=float)

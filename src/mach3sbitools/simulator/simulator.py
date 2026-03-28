@@ -80,11 +80,11 @@ class Simulator:
 
         count = 0
         valid_theta = np.empty_like(theta)
-        valid_x = None
+        valid_x = np.array([])
 
         # Debug counts
 
-        for i, t in enumerate(tqdm(theta, desc="Simulating")):
+        for t in tqdm(theta, desc="Simulating"):
             try:
                 x = self.simulator_wrapper.simulate(t.copy())
                 x_sample = np.random.poisson(x)
@@ -99,9 +99,7 @@ class Simulator:
             except Exception as e:
                 logger.warning(f"Error: Bad simulation! Skipping sample. {e}")
 
-        return valid_theta[:count], valid_x[
-            :count
-        ] if valid_x is not None else np.array([])
+        return valid_theta[:count], valid_x[:count]
 
     def save(
         self,
