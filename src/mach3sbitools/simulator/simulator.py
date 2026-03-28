@@ -78,28 +78,21 @@ class Simulator:
         samples = self.prior.sample((n_samples,))
         theta = samples.cpu().numpy()
 
-        count = 0
-        valid_theta = np.empty_like(theta)
-        valid_x = np.array([])
-
-        # Debug counts
+        valid_theta: list[np.ndarray] = []
+        valid_x: list[np.ndarray] = []
 
         for t in tqdm(theta, desc="Simulating"):
             try:
                 x = self.simulator_wrapper.simulate(t.copy())
-                x_sample = np.random.poisson(x)
-
-                if valid_x is None:
-                    valid_x = np.empty(
-                        (n_samples, *x_sample.shape), dtype=x_sample.dtype
-                    )
-                valid_theta[count] = t
-                valid_x[count] = x_sample
-                count += 1
+                valid_theta.append(t)
+                valid_x.append(np.random.poisson(x))
             except Exception as e:
                 logger.warning(f"Error: Bad simulation! Skipping sample. {e}")
 
-        return valid_theta[:count], valid_x[:count]
+        if not valid_x:
+            return np.array([]), np.array([])
+
+        return np.stack(valid_theta), np.stack(valid_x)
 
     def save(
         self,

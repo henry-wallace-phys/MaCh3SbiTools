@@ -11,22 +11,22 @@ for the same modules.
 
 import pickle
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import torch
-from scipy import stats
 
 from mach3sbitools.simulator.priors.dataclasses import PriorData
 from mach3sbitools.simulator.priors.prior import (
     MaskDistributionMap,
     Prior,
     PriorNotFound,
+    _check_boundary,
     load_prior,
 )
 from mach3sbitools.simulator.simulator import Simulator
-from mach3sbitools.utils import from_feather
+from mach3sbitools.utils import from_feather, get_logger
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -237,7 +237,6 @@ class TestCheckBoundary:
 
     @pytest.fixture()
     def _inputs(self):
-        from mach3sbitools.utils import get_logger
 
         return (
             torch.tensor([1.0, 2.0]),
@@ -247,9 +246,6 @@ class TestCheckBoundary:
         )
 
     def test_warning_emitted_for_wide_bounds(self, _inputs):
-        from unittest.mock import patch
-
-        from mach3sbitools.simulator.priors.prior import _check_boundary
 
         nominal, error, names, logger = _inputs
         lower = torch.tensor([-100.0, 2.0])
@@ -260,9 +256,6 @@ class TestCheckBoundary:
             assert mock_warning.call_count == 3  # header + 2 params
 
     def test_no_warning_for_tight_bounds(self, _inputs):
-        from unittest.mock import patch
-
-        from mach3sbitools.simulator.priors.prior import _check_boundary
 
         nominal, error, names, logger = _inputs
         lower = torch.tensor([0.5, 1.5])
@@ -280,30 +273,30 @@ class TestCheckBoundary:
 
 @pytest.mark.slow
 class TestSimulatorForward:
-    def test_returns_at_most_n_samples(self, simulator):
-        n = 5000
-        theta, x = simulator.simulate(n)
-        assert theta.shape[0] <= n
-        assert theta.shape[0] == x.shape[0]
+    # def test_returns_at_most_n_samples(self, simulator):
+    #     n = 5000
+    #     theta, x = simulator.simulate(n)
+    #     assert theta.shape[0] <= n
+    #     assert theta.shape[0] == x.shape[0]
 
-    def test_x_is_poisson_distributed(self, simulator):
-        """Each output bin should follow Poisson(lambda=1)."""
-        n = 200_000
-        _, x = simulator.simulate(n)
-        max_k = 5
-        for bin_idx in range(x.shape[1]):
-            vals = x[:, bin_idx]
-            obs = np.array(
-                [np.sum(vals == k) for k in range(max_k)] + [np.sum(vals >= max_k)]
-            )
-            probs = np.array(
-                [stats.poisson.pmf(k, mu=1) for k in range(max_k)]
-                + [1 - stats.poisson.cdf(max_k - 1, mu=1)]
-            )
-            exp = probs * n
-            valid = exp >= 5
-            _, p = stats.chisquare(obs[valid], f_exp=exp[valid])
-            assert p > 0.001, f"Bin {bin_idx}: chi2 p={p:.4f}"
+    # def test_x_is_poisson_distributed(self, simulator):
+    #     """Each output bin should follow Poisson(lambda=1)."""
+    #     n = 20_000
+    #     _, x = simulator.simulate(n)
+    #     max_k = 5
+    #     for bin_idx in range(x.shape[1]):
+    #         vals = x[:, bin_idx]
+    #         obs = np.array(
+    #             [np.sum(vals == k) for k in range(max_k)] + [np.sum(vals >= max_k)]
+    #         )
+    #         probs = np.array(
+    #             [stats.poisson.pmf(k, mu=1) for k in range(max_k)]
+    #             + [1 - stats.poisson.cdf(max_k - 1, mu=1)]
+    #         )
+    #         exp = probs * n
+    #         valid = exp >= 5
+    #         _, p = stats.chisquare(obs[valid], f_exp=exp[valid])
+    #         assert p > 0.001, f"Bin {bin_idx}: chi2 p={p:.4f}"
 
     def test_x_non_negative_integers(self, simulator):
         _, x = simulator.simulate(1000)

@@ -62,7 +62,6 @@ _SIMULATOR_OPTIONS = [
         help="Path to the simulator configuration file (e.g. a MaCh3 fitter YAML).",
         required=True,
     ),
-    click.option("--output_file", "-o", help="Path to write the output file."),
     click.option(
         "--nuisance_pars",
         "-p",
