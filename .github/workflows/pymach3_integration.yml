@@ -40,6 +40,6 @@ jobs:
           MACH3: /opt/MaCh3Tutorial
         run: |
           cd /opt/MaCh3Tutorial
-          .venv/bin/pytest $GITHUB_WORKSPACE/MaCh3SbiTools \
+          $GITHUB_WORKSPACE/.venv/bin/pytest $GITHUB_WORKSPACE/MaCh3SbiTools \
             --junitxml=junit/test-results.xml \
             --cov=mach3sbitools --cov-report=xml --cov-report=term-missing
