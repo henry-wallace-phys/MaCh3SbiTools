@@ -49,6 +49,15 @@ uv pip install .
 conda install .
 ```
 
+## Tutorials
+
+- For install information see the [install guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/installation.html)
+- For simulator set up information see the [simulator guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/building_simulator.html)
+- For CLI information see the [cli guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/cli.html)
+- The full tutorial lives in the [tutorials directory](https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main/tutorial). The Jupyter notebooks are designed to go from
+  physics code all the way your own fully implemented + trained SBI instance
+
+
 ## Pre-Built Simulators
 
 For users of MaCh3 we provide a pre-built simulator for use with pyMaCh3-Tutorial.
@@ -64,22 +73,7 @@ suite your own needs.
 
 More details can be found here: []
 
-## Tutorials
 
-- For install information see the [install guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/installation.html)
-- For simulator set up information see the [simulator guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/building_simulator.html)
-- For CLI information see the [cli guide](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/getting_started/cli.html)
-- The full tutorial lives in the [tutorials directory](https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main/tutorial). The Jupyter notebooks are designed to go from
-  physics code all the way your own fully implemented + trained SBI instance
-
-## Examples
-
-- For MaCh3 Tutorial the simulations can be run with the example class [here](src/mach3sbitools/examples/pyMaCh3/pyMaCh3.py).
-  The command for doing so is:
-
-  ```shell
-  mach3sbi simulate -m "mach3sbitools.examples" -c "pyMach3Simulator" [usual CLI opts]
-  ```
 
 ## References
 
