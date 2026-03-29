@@ -71,8 +71,7 @@ mach3sbi [simulate/create_prior/save_data] -m mach3sbitools.examples -c PyMaCh3 
 This can be adapted for the purposes of your own experimental MaCh3 simply swapping out the `SampleHandler` to
 suite your own needs.
 
-More details can be found here: []
-
+More details can be found [here](https://henry-wallace-phys.github.io/MaCh3SbiTools/modules/prebuilt/pymach3.html)
 
 
 ## References
