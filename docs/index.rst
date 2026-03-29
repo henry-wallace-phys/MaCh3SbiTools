@@ -50,6 +50,7 @@ Starting Up
 .. toctree::
    :caption: Getting Started
    :maxdepth: 2
+
    modules/getting_started/getting_started
 
 Pre-Existing Simulations
@@ -57,6 +58,7 @@ Pre-Existing Simulations
 .. toctree::
     :caption: Pre-Existing Simulations
     :maxdepth: 2
+
     modules/prebuilt/pymach3.rst
 
 
