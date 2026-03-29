@@ -8,6 +8,7 @@
 [![mypy-typecheck](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/mypy.yml/badge.svg)](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/mypy.yml)
 [![ruff-lint](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/ruff.yml/badge.svg)](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/ruff.yml)
 [![Build & Deploy Sphinx Docs](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/docs.yml/badge.svg)](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/docs.yml)
+[![pyMaCh3-integration](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pymach3_integration.yml/badge.svg)](https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pymach3_integration.yml)
 
 MaCh3 SBI Tools is a package used to perform
 Bayesian Simulation based inference with a flexible simulator and training setup
