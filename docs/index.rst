@@ -34,6 +34,9 @@ MaCh3 SBI TOOLS
       :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/docs.yml
       :alt: Build & Deploy Sphinx Docs
 
+   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pymach3_integration.yml/badge.svg
+      :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pymach3_integration.yml
+      :alt: PyMaCh3 Integration
 
 `MaCh3 SBI Tools <https://github.com/henry-wallace-phys/MaCh3SbiTools>`_ is a package used to perform
 Bayesian Simulation based inference with a flexible simulator and training setup using tools from the SBI :cite:`BoeltsDeistler_sbi_2025` package. The simulator is designed to work primarily with MaCh3 :cite:`the_mach3_collaboration_2026_18627288`.
@@ -45,14 +48,25 @@ Bayesian Simulation based inference with a flexible simulator and training setup
 
    modules/intro
 
-
+Starting Up
+~~~~~~~~~~~~~~~
 .. toctree::
    :caption: Getting Started
    :maxdepth: 2
 
    modules/getting_started/getting_started
 
+Pre-Existing Simulations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. toctree::
+    :caption: Pre-Existing Simulations
+    :maxdepth: 2
 
+    modules/prebuilt/pymach3.rst
+
+
+API-Reference
+~~~~~~~~~~~~~~~~~~~~~~~~~
 .. toctree::
    :caption: API Reference Guide
    :maxdepth: 1
