@@ -1,8 +1,7 @@
-Quick Start Guide
+Getting Started
 ================================
-
 .. toctree::
-   :caption: Installation
+   :caption: Walkthrough
    :maxdepth: 2
 
    installation

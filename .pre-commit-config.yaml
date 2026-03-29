@@ -67,14 +67,3 @@ repos:
     hooks:
       - id: nbstripout
         args: ['--extra-keys=metadata.celltoolbar cell.metadata.heading_collapsed']
-
--   repo: local
-    hooks:
-      - id: pytest
-        name: pytest (fast tests only)
-        entry: pytest
-        args: ["-m", "not slow"]
-        language: system
-        pass_filenames: false
-        always_run: false
-        files: ^(src|tests)/

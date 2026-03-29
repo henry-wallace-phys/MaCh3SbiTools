@@ -45,14 +45,23 @@ Bayesian Simulation based inference with a flexible simulator and training setup
 
    modules/intro
 
-
+Starting Up
+~~~~~~~~~~~~~~~
 .. toctree::
    :caption: Getting Started
    :maxdepth: 2
-
    modules/getting_started/getting_started
 
+Pre-Existing Simulations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. toctree::
+    :caption: Pre-Existing Simulations
+    :maxdepth: 2
+    modules/prebuilt/pymach3.rst
 
+
+API-Reference
+~~~~~~~~~~~~~~~~~~~~~~~~~
 .. toctree::
    :caption: API Reference Guide
    :maxdepth: 1

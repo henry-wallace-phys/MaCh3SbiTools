@@ -22,10 +22,13 @@ For full documentation see: https://henry-wallace-phys.github.io/MaCh3SbiTools/
 
 `mach3sbitools` requires python `3.11` or higher. It can be compiled for usage on a GPU
 which requires the appropriate [pyTorch install](https://pytorch.org/get-started/locally/). It is recommended to either use a
-`virtual environement` or `Conda`.
+`virtual environement`, `uv` or `Conda`.
 
-**NOTE**: Whilst this package can be installed with `uv` external packages such as
-[`MaCh3`](https://github.com/mach3-software/MaCh3/tree/develop) \[[2](#References)\] may not work within that framework
+To get the repo simply clone from github
+
+```shell
+git clone git@github.com:henry-wallace-phys/MaCh3SbiTools.git
+```
 
 ### With PIP
 
@@ -33,11 +36,32 @@ which requires the appropriate [pyTorch install](https://pytorch.org/get-started
 python -m pip install [-e] .
 ```
 
+### With UV
+
+```shell
+uv pip install .
+```
+
 ### With Conda
 
 ```shell
-conda develop .
+conda install .
 ```
+
+## Pre-Built Simulators
+
+For users of MaCh3 we provide a pre-built simulator for use with pyMaCh3-Tutorial.
+It can be found [here](src/mach3sbitools/examples/pyMaCh3). Once pyMaCh3 is installed
+the simulator can be used in the CLI through
+
+```shell
+mach3sbi [simulate/create_prior/save_data] -m mach3sbitools.examples -c PyMaCh3 pyMaCh3Simulator [opts]
+```
+
+This can be adapted for the purposes of your own experimental MaCh3 simply swapping out the `SampleHandler` to
+suite your own needs.
+
+More details can be found here: []
 
 ## Tutorials
 
