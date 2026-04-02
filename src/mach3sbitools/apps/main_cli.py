@@ -10,6 +10,7 @@ from pyarrow import Table
 from pyarrow import parquet as pq
 from sbi.analysis import pairplot
 
+from mach3sbitools.diagnostics import SBCDiagnostic, compare_logl
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.simulator import Simulator, create_prior, get_simulator
 from mach3sbitools.utils import MaCh3Logger, PosteriorConfig, TrainingConfig, get_logger
@@ -590,3 +591,59 @@ def inference(
     )
     pq.write_table(data_table, save_file)
     logger.info(f"Saved to {save_file}")
+
+
+@cli.command(short_help="Run model diagnostics")
+def diagnostics(
+    simulator_module: str,
+    simulator_class: str,
+    config: Path,
+    posterior: Path,
+    plot_dir: Path,
+    nuisance_pars: list[str],
+    cyclical_pars: list[str],
+    # Plot opts.
+    make_sbc_rank: bool,
+    make_expected_coverage: bool,
+    make_tarp: bool,
+    n_prior_samples: int,
+    n_posterior_samples: int,
+    make_logl_comp: bool,
+) -> None:
+    # Set up simulator
+    simulator = Simulator(
+        simulator_module,
+        simulator_class,
+        config,
+        nuisance_pars=nuisance_pars,
+        cyclical_pars=cyclical_pars,
+    )
+
+    inference_handler = InferenceHandler(Path(posterior), nuisance_pars)
+    inference_handler.load_posterior(Path(posterior), posterior_config=None)
+
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    if make_logl_comp:
+        compare_logl(
+            simulator,
+            inference_handler,
+            n_posterior_samples,
+            save_path=plot_dir / "logl_comp.pdf",
+        )
+
+    if not make_sbc_rank and not make_expected_coverage and not make_tarp:
+        return
+
+    sbc_diag = SBCDiagnostic(simulator, inference_handler, plot_dir)
+
+    sbc_diag.create_prior_samples(n_prior_samples)
+
+    if make_sbc_rank:
+        sbc_diag.rank_plot(n_posterior_samples)
+
+    if make_expected_coverage:
+        sbc_diag.expected_coverage(n_posterior_samples)
+
+    if make_tarp:
+        sbc_diag.tarp(n_posterior_samples)
