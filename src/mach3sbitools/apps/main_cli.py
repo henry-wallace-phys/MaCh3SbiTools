@@ -629,19 +629,16 @@ def inference(
 )
 @optgroup.option(
     "--make_expected_coverage",
-    "-m",
     is_flag=True,
     default=False,
 )
 @optgroup.option(
     "--make_tarp",
-    "-t",
     is_flag=True,
     default=False,
 )
 @optgroup.option(
     "--make_logl_comp",
-    "-l",
     is_flag=True,
     default=False,
 )
