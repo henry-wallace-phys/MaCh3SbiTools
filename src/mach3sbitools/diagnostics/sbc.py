@@ -153,7 +153,7 @@ class SBCDiagnostic:
         logger.info(f"ATC: {atc}, should be close to 0")
         logger.info(f"KS p-value: {ks_pval}")
 
-        fig, _ = plot_tarp(ecp, alpha)
+        fig, _ = plot_tarp(ecp.cpu(), alpha.cpu())
 
         fig.savefig(self.plot_dir / "tarp.pdf")
         plt.close(fig)
