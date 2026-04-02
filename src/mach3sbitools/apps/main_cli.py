@@ -605,11 +605,6 @@ def inference(
     "The model architecture is read directly from the checkpoint — "
     "no architecture flags are needed.",
 )
-@optgroup.option(
-    "--plot_dir",
-    "-d",
-    type=click.Path(exists=True),
-)
 @optgroup.group("Parameters")
 @optgroup.option(
     "--nuisance_pars",
@@ -649,7 +644,7 @@ def diagnostics(
     simulator_class: str,
     config: Path,
     posterior: Path,
-    plot_dir: Path,
+    output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
     # Plot opts.
@@ -672,20 +667,20 @@ def diagnostics(
     inference_handler = InferenceHandler(Path(posterior), nuisance_pars)
     inference_handler.load_posterior(Path(posterior), posterior_config=None)
 
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    output_file.mkdir(parents=True, exist_ok=True)
 
     if make_logl_comp:
         compare_logl(
             simulator,
             inference_handler,
             n_posterior_samples,
-            save_path=plot_dir / "logl_comp.pdf",
+            save_path=output_file / "logl_comp.pdf",
         )
 
     if not make_sbc_rank and not make_expected_coverage and not make_tarp:
         return
 
-    sbc_diag = SBCDiagnostic(simulator, inference_handler, plot_dir)
+    sbc_diag = SBCDiagnostic(simulator, inference_handler, output_file)
 
     sbc_diag.create_prior_samples(n_prior_samples)
 
