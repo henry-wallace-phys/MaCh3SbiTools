@@ -177,3 +177,14 @@ class SBILightningModule(L.LightningModule):
                 "monitor": "ema_val_loss",
             },
         }
+
+    def on_save_checkpoint(self, checkpoint: dict) -> None:
+        # Save only the model weights explicitly
+        checkpoint["model_state"] = self.model.state_dict()
+
+        # Optionally store config (small, safe)
+        if self.model_config is not None:
+            checkpoint["model_config"] = self.model_config
+
+        # You can also store epoch for convenience
+        checkpoint["epoch"] = self.current_epoch
