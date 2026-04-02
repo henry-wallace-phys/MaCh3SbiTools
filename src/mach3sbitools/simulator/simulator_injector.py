@@ -162,21 +162,21 @@ class SimulatorProtocol(Protocol):
 
 
 def _implements(proto: type) -> Callable[[type], type]:
-    """
-    Class decorator that asserts the decorated class satisfies *proto* at
-    decoration time.
-
-    :param proto: A :func:`runtime_checkable` Protocol class.
-    :returns: Decorator that returns the class unchanged or raises
-        :exc:`SimulatorImplementationError`.
-    """
-
     def _deco(cls_def):
-        if issubclass(cls_def, proto):
+        proto_methods = {
+            name
+            for name, _ in inspect.getmembers(proto, predicate=inspect.isfunction)
+            if not name.startswith("_")
+        }
+        missing = [m for m in proto_methods if not callable(getattr(cls_def, m, None))]
+
+        if not missing:
             return cls_def
+
         raise SimulatorImplementationError(
-            f"{cls_def} does not implement protocol {proto}. "
-            f"Please see {__file__} for the required interface."
+            f"{cls_def.__name__} does not implement protocol {proto.__name__}.\n"
+            f"Missing methods: {', '.join(sorted(missing))}\n"
+            f"See {__file__} for the required interface."
         )
 
     return _deco
