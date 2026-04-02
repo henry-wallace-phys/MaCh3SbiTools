@@ -150,8 +150,8 @@ class SBCDiagnostic:
 
         atc, ks_pval = check_tarp(ecp.cpu(), alpha.cpu())
 
-        logger.info("ATC: {:4f}, should be close to 0", atc)
-        logger.info("KS p-value: {:.4f}", ks_pval)
+        logger.info(f"ATC: {atc}, should be close to 0")
+        logger.info(f"KS p-value: {ks_pval}")
 
         fig, _ = plot_tarp(ecp, alpha)
 
