@@ -46,10 +46,12 @@ class SBCDiagnostic:
         self.prior_samples = self.inference_handler.prior.sample((num_prior_samples,))
 
         prior_predictives_np = np.array(
-            self.simulator.simulator_wrapper.simulate(p)
-            for p in tqdm(
-                self.prior_samples.cpu().numpy(), desc="Running SBC diagnostic"
-            )
+            [
+                self.simulator.simulator_wrapper.simulate(p)
+                for p in tqdm(
+                    self.prior_samples.cpu().numpy(), desc="Running SBC diagnostic"
+                )
+            ]
         )
         self.prior_predictives = self._device_handler.to_tensor(prior_predictives_np)
 
