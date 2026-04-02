@@ -54,7 +54,7 @@ class SBCDiagnostic:
                     self.prior_samples.cpu().numpy(), desc="Running SBC diagnostic"
                 )
             ],
-            dtype=np.double,
+            dtype=np.float32,
         )
         self.prior_predictives = self._device_handler.to_tensor(
             prior_predictives_np
