@@ -129,7 +129,7 @@ class SBCDiagnostic:
             ranks,
             num_posterior_samples,
             num_bins=num_rank_bins,
-            plt_type="cdf",
+            plot_type="cdf",
             figsize=(20, 20),
         )
 
