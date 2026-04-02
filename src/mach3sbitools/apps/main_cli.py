@@ -9,10 +9,17 @@ from matplotlib import pyplot as plt
 from pyarrow import Table
 from pyarrow import parquet as pq
 from sbi.analysis import pairplot
+from sbi.inference import ImportanceSamplingPosterior
 
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.simulator import Simulator, create_prior, get_simulator
-from mach3sbitools.utils import MaCh3Logger, PosteriorConfig, TrainingConfig, get_logger
+from mach3sbitools.utils import (
+    MaCh3Logger,
+    PosteriorConfig,
+    TorchDeviceHandler,
+    TrainingConfig,
+    get_logger,
+)
 
 # ── Shared option helpers ──────────────────────────────────────────────────────
 
@@ -590,3 +597,84 @@ def inference(
     )
     pq.write_table(data_table, save_file)
     logger.info(f"Saved to {save_file}")
+
+
+@cli.command(short_help="Importance sample the posterior given observed data.")
+@optgroup.group("Input / Output")
+@optgroup.option(
+    "--posterior",
+    "-i",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to a saved density estimator checkpoint (.pt / .ckpt). "
+    "The model architecture is read directly from the checkpoint — "
+    "no architecture flags are needed.",
+)
+# Sampling
+@optgroup.group("Sampling")
+@optgroup.option(
+    "--n_samples",
+    "-n",
+    required=True,
+    type=int,
+    help="Number of posterior samples to draw.",
+)
+@optgroup.option(
+    "--oversampling_factor",
+    required=False,
+    default=5,
+    type=int,
+    help="Oversampling rate.",
+)
+@apply_options(_SIMULATOR_OPTIONS)
+def importance_sample(
+    simulator_module: str,
+    simulator_class: str,
+    config: Path,
+    output_file: Path,
+    n_samples: int,
+    oversampling_factor: int,
+    posterior: Path,
+    nuisance_pars: list[str],
+    cyclical_pars: list[str],
+):
+    logger = get_logger()
+    logger.info("Perform importance sampling")
+
+    device_handler = TorchDeviceHandler()
+    """Sample the posterior distribution conditioned on observed data."""
+    simulator = Simulator(
+        simulator_module,
+        simulator_class,
+        config,
+        nuisance_pars=nuisance_pars,
+        cyclical_pars=cyclical_pars,
+    )
+
+    prior_path = Path("/tmp/prior.pkl")
+    simulator.prior.save(prior_path)
+    inference_handler = InferenceHandler(Path(prior_path), nuisance_pars)
+    inference_handler.load_posterior(Path(posterior), posterior_config=None)
+    inference_handler.build_posterior()
+
+    def log_prob_fn(theta, _):
+        return device_handler.to_tensor(
+            np.array([simulator.simulator_wrapper.get_log_likelihood(t) for t in theta])
+        )
+
+    logger.info("Sampling...")
+    posterior_sir = ImportanceSamplingPosterior(
+        potential_fn=log_prob_fn, proposal=inference_handler.posterior, method="sir"
+    ).set_default_x(
+        device_handler.to_tensor(simulator.simulator_wrapper.get_data_bins())
+    )
+
+    theta_inferred = posterior_sir.sample(
+        (n_samples,), oversampling_factor=oversampling_factor
+    )
+    parameter_names = inference_handler.prior.prior_data.parameter_names
+    data_table = Table.from_pydict(
+        {p: theta_inferred[:, i] for i, p in enumerate(parameter_names)}
+    )
+    pq.write_table(data_table, output_file)
+    logger.info(f"Saved to {output_file}")
