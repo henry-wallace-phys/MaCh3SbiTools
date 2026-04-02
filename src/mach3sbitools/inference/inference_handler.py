@@ -276,6 +276,7 @@ class InferenceHandler:
 
         self._density_estimator = lightning_module.model
         self._density_estimator.eval()
+        trainer.save_checkpoint(config.save_path)
 
     # ── Posterior sampling ────────────────────────────────────────────────────
 
