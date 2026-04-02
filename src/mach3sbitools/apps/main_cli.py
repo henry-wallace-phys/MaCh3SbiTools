@@ -594,6 +594,59 @@ def inference(
 
 
 @cli.command(short_help="Run model diagnostics")
+@apply_options(_SIMULATOR_OPTIONS)
+@optgroup.group("Input / Output")
+@optgroup.option(
+    "--posterior",
+    "-i",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to a saved density estimator checkpoint (.pt / .ckpt). "
+    "The model architecture is read directly from the checkpoint — "
+    "no architecture flags are needed.",
+)
+@optgroup.option(
+    "--plot_dir",
+    "-d",
+    type=click.Path(exists=True),
+)
+@optgroup.group("Parameters")
+@optgroup.option(
+    "--nuisance_pars",
+    "-p",
+    multiple=True,
+)
+@optgroup.option(
+    "--cyclical_pars",
+    "-cy",
+    multiple=True,
+)
+@optgroup.group("Diagnostic Types")
+@optgroup.option(
+    "--make_sbc_rank",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_expected_coverage",
+    "-m",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_tarp",
+    "-t",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_logl_comp",
+    "-l",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option("--n_prior_samples", "-n", type=int, default=200)
+@optgroup.option("--n_posterior_samples", type=int, default=1000)
 def diagnostics(
     simulator_module: str,
     simulator_class: str,
@@ -606,9 +659,9 @@ def diagnostics(
     make_sbc_rank: bool,
     make_expected_coverage: bool,
     make_tarp: bool,
+    make_logl_comp: bool,
     n_prior_samples: int,
     n_posterior_samples: int,
-    make_logl_comp: bool,
 ) -> None:
     # Set up simulator
     simulator = Simulator(
