@@ -45,7 +45,7 @@ class SBCDiagnostic:
     def create_prior_samples(self, num_prior_samples: int) -> None:
         self.prior_samples = self.inference_handler.prior.sample(
             (num_prior_samples,)
-        ).to(np.float32)
+        ).to(torch.float32)
 
         prior_predictives_np = np.array(
             [
@@ -58,7 +58,7 @@ class SBCDiagnostic:
         )
         self.prior_predictives = self._device_handler.to_tensor(
             prior_predictives_np
-        ).to(np.float32)
+        ).to(torch.float32)
 
     def _check_prior_sampled(self):
         if self.prior_predictives is None:
