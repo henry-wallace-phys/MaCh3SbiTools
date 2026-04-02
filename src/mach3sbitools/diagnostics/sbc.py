@@ -148,7 +148,7 @@ class SBCDiagnostic:
             use_batched_sampling=True,
         )
 
-        atc, ks_pval = check_tarp(ecp, alpha)
+        atc, ks_pval = check_tarp(ecp.cpu(), alpha.cpu())
 
         logger.info("ATC: {:4f}, should be close to 0", atc)
         logger.info("KS p-value: {:.4f}", ks_pval)
