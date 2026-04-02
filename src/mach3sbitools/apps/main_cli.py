@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -664,7 +665,12 @@ def diagnostics(
         cyclical_pars=cyclical_pars,
     )
 
-    inference_handler = InferenceHandler(Path(posterior), nuisance_pars)
+    prior = simulator.prior
+
+    prior_path = Path(f"/tmp/{datetime.now()}_prior.pkl")
+    prior.save(prior_path)
+
+    inference_handler = InferenceHandler(prior_path, nuisance_pars)
     inference_handler.load_posterior(Path(posterior), posterior_config=None)
 
     output_file.mkdir(parents=True, exist_ok=True)
