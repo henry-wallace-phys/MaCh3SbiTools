@@ -59,7 +59,7 @@ class SBCDiagnostic:
         if self.prior_predictives is None:
             raise ValueError("Prior predictives not set")
 
-        if self.posterior_predictives is None:
+        if self.prior_predictives is None:
             raise ValueError("Posterior predictives not set")
 
     def rank_plot(
