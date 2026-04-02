@@ -51,7 +51,8 @@ class SBCDiagnostic:
                 for p in tqdm(
                     self.prior_samples.cpu().numpy(), desc="Running SBC diagnostic"
                 )
-            ]
+            ],
+            dtype=float,
         )
         self.prior_predictives = self._device_handler.to_tensor(prior_predictives_np)
 
