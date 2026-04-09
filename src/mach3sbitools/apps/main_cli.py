@@ -657,6 +657,9 @@ def importance_sample(
     inference_handler.load_posterior(Path(posterior), posterior_config=None)
     inference_handler.build_posterior()
 
+    if inference_handler.posterior is None:
+        raise RuntimeError("No posterior found")
+
     def log_prob_fn(theta, _):
         return device_handler.to_tensor(
             np.array([simulator.simulator_wrapper.get_log_likelihood(t) for t in theta])
@@ -665,6 +668,8 @@ def importance_sample(
     logger.info("Sampling...")
 
     xo = device_handler.to_tensor(simulator.simulator_wrapper.get_data_bins())
+
+    inference_handler.posterior.set_default_x(xo)
 
     posterior_sir = ImportanceSamplingPosterior(
         potential_fn=log_prob_fn, proposal=inference_handler.posterior, method="sir"
