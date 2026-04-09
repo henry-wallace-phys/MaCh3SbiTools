@@ -677,8 +677,10 @@ def importance_sample(
     inference_handler.posterior.set_default_x(xo)
 
     posterior_sir = ImportanceSamplingPosterior(
-        potential_fn=log_prob_fn, proposal=inference_handler.posterior, method="sir"
-    ).set_default_x(xo)
+        potential_fn=log_prob_fn,
+        proposal=inference_handler.posterior.to(device_handler.device),
+        method="sir",
+    )
 
     theta_inferred = posterior_sir.sample(
         (n_samples,), oversampling_factor=oversampling_factor
