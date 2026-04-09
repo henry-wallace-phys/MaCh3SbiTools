@@ -663,14 +663,15 @@ def importance_sample(
         )
 
     logger.info("Sampling...")
+
+    xo = device_handler.to_tensor(simulator.simulator_wrapper.get_data_bins())
+
     posterior_sir = ImportanceSamplingPosterior(
         potential_fn=log_prob_fn, proposal=inference_handler.posterior, method="sir"
-    ).set_default_x(
-        device_handler.to_tensor(simulator.simulator_wrapper.get_data_bins())
-    )
+    ).set_default_x(xo)
 
     theta_inferred = posterior_sir.sample(
-        (n_samples,), oversampling_factor=oversampling_factor
+        (n_samples,), oversampling_factor=oversampling_factor, x=xo
     )
     parameter_names = inference_handler.prior.prior_data.parameter_names
     data_table = Table.from_pydict(
