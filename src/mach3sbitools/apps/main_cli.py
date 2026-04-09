@@ -662,7 +662,12 @@ def importance_sample(
 
     def log_prob_fn(theta, _):
         return device_handler.to_tensor(
-            np.array([simulator.simulator_wrapper.get_log_likelihood(t) for t in theta])
+            np.array(
+                [
+                    simulator.simulator_wrapper.get_log_likelihood(t)
+                    for t in theta.cpu().numpy()
+                ]
+            )
         )
 
     logger.info("Sampling...")
