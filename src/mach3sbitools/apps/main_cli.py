@@ -627,6 +627,13 @@ def inference(
     type=int,
     help="Oversampling rate.",
 )
+@optgroup.option(
+    "--max-sampling-batch",
+    required=False,
+    default=10_000,
+    type=int,
+    help="Max sampling batch size.",
+)
 @apply_options(_SIMULATOR_OPTIONS)
 def importance_sample(
     simulator_module: str,
@@ -635,6 +642,7 @@ def importance_sample(
     output_file: Path,
     n_samples: int,
     oversampling_factor: int,
+    max_sampling_batch: int,
     posterior: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
@@ -687,6 +695,7 @@ def importance_sample(
     theta_inferred = posterior_sir.sample(
         (n_samples,),
         oversampling_factor=oversampling_factor,
+        max_sampling_batch_size=max_sampling_batch,
         x=xo,
         show_progress_bars=True,
     )
