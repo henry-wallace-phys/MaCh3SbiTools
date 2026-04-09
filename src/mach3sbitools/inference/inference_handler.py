@@ -276,6 +276,10 @@ class InferenceHandler:
 
         self._density_estimator = lightning_module.model
         self._density_estimator.eval()
+        if config.save_path is None:
+            raise FileNotFoundError("No checkpoint provided.")
+
+        trainer.save_checkpoint(config.save_path)
 
     # ── Posterior sampling ────────────────────────────────────────────────────
 
