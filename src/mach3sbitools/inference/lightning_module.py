@@ -15,31 +15,12 @@ from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
 
 
 @runtime_checkable
-class SBIDensityEstimator(Protocol, nn.Module):
+class HasLoss(Protocol):
     """
-    Structural subtype for SBI density estimators.
-
-    Ensures the model passed to the LightningModule implements the
-    required methods for the training loop.
+    Minimal protocol for objects implementing a .loss() method.
     """
 
-    def loss(self, theta: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        """
-        Compute the per-sample loss.
-
-        :param theta: Parameter tensor.
-        :param x: Observation tensor.
-        :returns: Loss tensor of shape (batch_size,).
-        """
-        ...
-
-    def parameters(self) -> Any:
-        """Returns an iterator over module parameters."""
-        ...
-
-    def state_dict(self) -> dict[str, torch.Tensor]:
-        """Returns a dictionary containing a whole state of the module."""
-        ...
+    def loss(self, theta: torch.Tensor, x: torch.Tensor) -> torch.Tensor: ...
 
 
 class SBILightningModule(L.LightningModule):
@@ -49,30 +30,36 @@ class SBILightningModule(L.LightningModule):
     Handles the training and validation steps, EMA-smoothed validation loss
     tracking, and the learning rate scheduler.
 
-    All logged metrics use ``sync_dist=True`` so that early stopping and
-    checkpointing behave correctly across ranks in DDP training.
-
-    :ivar model: The density estimator implementing the :class:`SBIDensityEstimator` protocol.
+    :ivar model: The density estimator module.
+    :vartype model: torch.nn.Module
     :ivar config: Training configuration object.
-    :ivar model_config: Optional architecture configuration for reconstruction.
+    :ivar model_config: Optional architecture configuration.
     :ivar ema_val_loss: Exponential Moving Average of the validation loss.
     """
 
     def __init__(
         self,
-        density_estimator: SBIDensityEstimator,
+        density_estimator: nn.Module,
         config: TrainingConfig,
         model_config: PosteriorConfig | None = None,
     ):
         """
-        :param density_estimator: The ``sbi`` density estimator network to
-            train. Must expose a ``.loss(theta, x)`` method.
+        :param density_estimator: The ``sbi`` density estimator network.
+            Must implement a ``.loss(theta, x)`` method.
         :param config: Training loop hyperparameters.
         :param model_config: Architecture configuration embedded in checkpoints.
         """
         super().__init__()
-        # By typing this as SBIDensityEstimator, Mypy knows .loss() is callable
-        self.model: SBIDensityEstimator = density_estimator
+
+        # Runtime check to ensure the model is valid
+        if not hasattr(density_estimator, "loss"):
+            raise TypeError(
+                f"Model of type {type(density_estimator)} must implement .loss(theta, x)"
+            )
+
+        # Typing as Any prevents Mypy from complaining about .loss() not existing
+        # on nn.Module, while still allowing .eval(), .train(), etc.
+        self.model: Any = density_estimator
         self.config = config
         self.model_config = model_config
         self.save_hyperparameters(ignore=["density_estimator"])
@@ -137,20 +124,16 @@ class SBILightningModule(L.LightningModule):
         """
         Update and log the EMA-smoothed validation loss after each epoch.
         """
-        val_loss = self.trainer.callback_metrics.get(
+        val_loss_raw = self.trainer.callback_metrics.get(
             "val_loss", torch.tensor(float("inf"))
         )
-
-        # Ensure val_loss is a float for calculation
-        current_val_loss = float(val_loss)
+        val_loss = float(val_loss_raw)
 
         if self.ema_val_loss == float("inf"):
-            self.ema_val_loss = current_val_loss
+            self.ema_val_loss = val_loss
         else:
             alpha = self.config.ema_alpha
-            self.ema_val_loss = (alpha * current_val_loss) + (
-                1 - alpha
-            ) * self.ema_val_loss
+            self.ema_val_loss = (alpha * val_loss) + (1 - alpha) * self.ema_val_loss
 
         self.log("ema_val_loss", self.ema_val_loss, sync_dist=True)
 
