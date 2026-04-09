@@ -13,8 +13,6 @@ is to construct this module and pass it to a
     trainer.fit(module, datamodule=datamodule)
 """
 
-from typing import cast
-
 import lightning as L
 import torch
 import torch.nn as nn
@@ -65,7 +63,7 @@ class SBILightningModule(L.LightningModule):
 
         self.ema_val_loss: float = float("inf")
 
-    def forward(self, theta: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, theta: torch.Tensor, x: torch.Tensor):
         """
         Forward pass — delegates to the density estimator's loss method.
 
@@ -73,11 +71,9 @@ class SBILightningModule(L.LightningModule):
         :param x: Observable tensor of shape ``(batch_size, n_bins)``.
         :returns: Per-sample loss tensor of shape ``(batch_size,)``.
         """
-        return cast(torch.Tensor, self.model.loss(theta, x))
+        return self.model.loss(theta, x)
 
-    def training_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
+    def training_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         """
         Compute and log the mean training loss for one batch.
 
@@ -98,11 +94,9 @@ class SBILightningModule(L.LightningModule):
             prog_bar=True,
             sync_dist=True,
         )
-        return cast(torch.Tensor, loss)
+        return loss
 
-    def validation_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
+    def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         """
         Compute and log the mean validation loss for one batch.
 
@@ -123,7 +117,7 @@ class SBILightningModule(L.LightningModule):
             prog_bar=True,
             sync_dist=True,
         )
-        return cast(torch.Tensor, loss)
+        return loss
 
     def on_validation_epoch_end(self) -> None:
         """
