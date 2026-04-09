@@ -26,7 +26,8 @@ dependencies = [
     "ruff",
     "mypy",
     "sphinx",
-    "lightning"
+    "lightning",
+    "importlib_metadata"
 ]
 
 [project.optional-dependencies]

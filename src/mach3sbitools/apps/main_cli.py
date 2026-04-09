@@ -10,6 +10,7 @@ from pyarrow import Table
 from pyarrow import parquet as pq
 from sbi.analysis import pairplot
 from sbi.inference import ImportanceSamplingPosterior
+from tqdm.auto import tqdm
 
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.simulator import Simulator, create_prior, get_simulator
@@ -665,7 +666,7 @@ def importance_sample(
             np.array(
                 [
                     simulator.simulator_wrapper.get_log_likelihood(t)
-                    for t in theta.cpu().numpy()
+                    for t in tqdm(theta.cpu().numpy())
                 ]
             )
         )
@@ -678,12 +679,16 @@ def importance_sample(
 
     posterior_sir = ImportanceSamplingPosterior(
         potential_fn=log_prob_fn,
-        proposal=inference_handler.posterior.to(device_handler.device),
+        proposal=inference_handler.posterior,
         method="sir",
+        device=device_handler.device,
     )
 
     theta_inferred = posterior_sir.sample(
-        (n_samples,), oversampling_factor=oversampling_factor, x=xo
+        (n_samples,),
+        oversampling_factor=oversampling_factor,
+        x=xo,
+        show_progress_bars=True,
     )
     parameter_names = inference_handler.prior.prior_data.parameter_names
     data_table = Table.from_pydict(
