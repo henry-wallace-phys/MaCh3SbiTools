@@ -15,7 +15,7 @@ is to construct this module and pass it to a
 
 import lightning as L
 import torch
-import torch.nn as nn
+from sbi.neural_nets.estimators.base import ConditionalEstimator
 
 from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
 
@@ -41,7 +41,7 @@ class SBILightningModule(L.LightningModule):
 
     def __init__(
         self,
-        density_estimator: nn.Module,
+        density_estimator: ConditionalEstimator,
         config: TrainingConfig,
         model_config: PosteriorConfig | None = None,
     ):
