@@ -683,7 +683,7 @@ def importance_sample(
     )
 
     theta_inferred = posterior_sir.sample(
-        (n_samples,), oversampling_factor=oversampling_factor
+        (n_samples,), oversampling_factor=oversampling_factor, x=xo
     )
     parameter_names = inference_handler.prior.prior_data.parameter_names
     data_table = Table.from_pydict(
