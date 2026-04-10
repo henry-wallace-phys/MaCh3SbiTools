@@ -9,6 +9,7 @@ from mach3sbitools.utils import (
     MaCh3Logger,
 )
 
+from .diagnostics import diagnostics_module
 from .importance_sample import importance_sample_module
 from .inference import inference as inference_module
 from .save_data import save_data_module
@@ -595,4 +596,83 @@ def importance_sample(
         posterior,
         nuisance_pars,
         cyclical_pars,
+    )
+
+
+@cli.command(short_help="Run model diagnostics")
+@apply_options(_SIMULATOR_OPTIONS)
+@optgroup.group("Input / Output")
+@optgroup.option(
+    "--posterior",
+    "-i",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to a saved density estimator checkpoint (.pt / .ckpt). "
+    "The model architecture is read directly from the checkpoint — "
+    "no architecture flags are needed.",
+)
+@optgroup.group("Parameters")
+@optgroup.option(
+    "--nuisance_pars",
+    "-p",
+    multiple=True,
+)
+@optgroup.option(
+    "--cyclical_pars",
+    "-cy",
+    multiple=True,
+)
+@optgroup.group("Diagnostic Types")
+@optgroup.option(
+    "--make_sbc_rank",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_expected_coverage",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_tarp",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_logl_comp",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option("--n_prior_samples", "-n", type=int, default=200)
+@optgroup.option("--n_posterior_samples", type=int, default=1000)
+def diagnostics(
+    simulator_module: str,
+    simulator_class: str,
+    config: Path,
+    posterior: Path,
+    output_file: Path,
+    nuisance_pars: list[str],
+    cyclical_pars: list[str],
+    # Plot opts.
+    make_sbc_rank: bool,
+    make_expected_coverage: bool,
+    make_tarp: bool,
+    make_logl_comp: bool,
+    n_prior_samples: int,
+    n_posterior_samples: int,
+) -> None:
+    diagnostics_module(
+        simulator_module,
+        simulator_class,
+        config,
+        posterior,
+        output_file,
+        nuisance_pars,
+        cyclical_pars,
+        make_sbc_rank,
+        make_expected_coverage,
+        make_tarp,
+        make_logl_comp,
+        n_prior_samples,
+        n_posterior_samples,
     )
