@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from pyarrow import Table
 from pyarrow import parquet as pq
 from sbi.analysis import pairplot
 
+from mach3sbitools.diagnostics import SBCDiagnostic, compare_logl
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.simulator import Simulator, create_prior, get_simulator
 from mach3sbitools.utils import MaCh3Logger, PosteriorConfig, TrainingConfig, get_logger
@@ -590,3 +592,109 @@ def inference(
     )
     pq.write_table(data_table, save_file)
     logger.info(f"Saved to {save_file}")
+
+
+@cli.command(short_help="Run model diagnostics")
+@apply_options(_SIMULATOR_OPTIONS)
+@optgroup.group("Input / Output")
+@optgroup.option(
+    "--posterior",
+    "-i",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to a saved density estimator checkpoint (.pt / .ckpt). "
+    "The model architecture is read directly from the checkpoint — "
+    "no architecture flags are needed.",
+)
+@optgroup.group("Parameters")
+@optgroup.option(
+    "--nuisance_pars",
+    "-p",
+    multiple=True,
+)
+@optgroup.option(
+    "--cyclical_pars",
+    "-cy",
+    multiple=True,
+)
+@optgroup.group("Diagnostic Types")
+@optgroup.option(
+    "--make_sbc_rank",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_expected_coverage",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_tarp",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option(
+    "--make_logl_comp",
+    is_flag=True,
+    default=False,
+)
+@optgroup.option("--n_prior_samples", "-n", type=int, default=200)
+@optgroup.option("--n_posterior_samples", type=int, default=1000)
+def diagnostics(
+    simulator_module: str,
+    simulator_class: str,
+    config: Path,
+    posterior: Path,
+    output_file: Path,
+    nuisance_pars: list[str],
+    cyclical_pars: list[str],
+    # Plot opts.
+    make_sbc_rank: bool,
+    make_expected_coverage: bool,
+    make_tarp: bool,
+    make_logl_comp: bool,
+    n_prior_samples: int,
+    n_posterior_samples: int,
+) -> None:
+    # Set up simulator
+    simulator = Simulator(
+        simulator_module,
+        simulator_class,
+        config,
+        nuisance_pars=nuisance_pars,
+        cyclical_pars=cyclical_pars,
+    )
+
+    prior = simulator.prior
+
+    prior_path = Path(f"/tmp/{datetime.now()}_prior.pkl")
+    prior.save(prior_path)
+
+    inference_handler = InferenceHandler(prior_path, nuisance_pars)
+    inference_handler.load_posterior(Path(posterior), posterior_config=None)
+
+    output_file.mkdir(parents=True, exist_ok=True)
+
+    if make_logl_comp:
+        compare_logl(
+            simulator,
+            inference_handler,
+            n_posterior_samples,
+            save_path=output_file / "logl_comp.pdf",
+        )
+
+    if not make_sbc_rank and not make_expected_coverage and not make_tarp:
+        return
+
+    sbc_diag = SBCDiagnostic(simulator, inference_handler, output_file)
+
+    sbc_diag.create_prior_samples(n_prior_samples)
+
+    if make_sbc_rank:
+        sbc_diag.rank_plot(n_posterior_samples)
+
+    if make_expected_coverage:
+        sbc_diag.expected_coverage(n_posterior_samples)
+
+    if make_tarp:
+        sbc_diag.tarp(n_posterior_samples)
