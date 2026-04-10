@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "3.1.0"
+version = "3.1.1"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,7 +26,9 @@ dependencies = [
     "ruff",
     "mypy",
     "sphinx",
-    "lightning"
+    "importlib-metadata",
+    "lightning",
+    "awkward[numba]"
 ]
 
 [project.optional-dependencies]
