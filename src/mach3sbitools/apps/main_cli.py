@@ -1,24 +1,24 @@
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import click
-import numpy as np
 from click_option_group import optgroup
-from matplotlib import pyplot as plt
-from pyarrow import Table
-from pyarrow import parquet as pq
-from sbi.analysis import pairplot
 
-from mach3sbitools.diagnostics import SBCDiagnostic, compare_logl
-from mach3sbitools.inference import InferenceHandler
-from mach3sbitools.simulator import Simulator, create_prior, get_simulator
-from mach3sbitools.utils import MaCh3Logger, PosteriorConfig, TrainingConfig, get_logger
+from mach3sbitools.utils import (
+    MaCh3Logger,
+)
+
+from .diagnostics import diagnostics_module
+from .importance_sample import importance_sample_module
+from .inference import inference as inference_module
+from .save_data import save_data_module
+from .save_prior import save_prior_module
+from .simulate import simulate_module
+from .train import train_module
+
 
 # ── Shared option helpers ──────────────────────────────────────────────────────
-
-
 def apply_options(
     options: list[Any],
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -98,8 +98,6 @@ def cli(log_file: Path | None, log_level: str) -> None:
 
 
 # ── create_prior ──────────────────────────────────────────────────────────────
-
-
 @cli.command(
     "create_prior", short_help="Generate and save a prior from a simulator instance."
 )
@@ -124,14 +122,17 @@ def save_prior(
             -m mypackage.simulator -s MySimulator \\
             -c config.yaml -o prior.pkl
     """
-    injector = get_simulator(simulator_module, simulator_class, Path(config))
-    prior = create_prior(injector, nuisance_pars, cyclical_pars)
-    prior.save(Path(output_file))
+    save_prior_module(
+        simulator_module,
+        simulator_class,
+        config,
+        output_file,
+        nuisance_pars,
+        cyclical_pars,
+    )
 
 
 # ── simulate ──────────────────────────────────────────────────────────────────
-
-
 @cli.command("simulate", short_help="Run simulations and save to feather files.")
 @apply_options(_SIMULATOR_OPTIONS)
 @click.option(
@@ -170,22 +171,19 @@ def simulate(
             -m mypackage.simulator -s MySimulator \\
             -c config.yaml -n 100000 -o sims.feather
     """
-    simulator = Simulator(
+    simulate_module(
         simulator_module,
         simulator_class,
         config,
-        nuisance_pars=nuisance_pars,
-        cyclical_pars=cyclical_pars,
-    )
-    x, theta = simulator.simulate(n_simulations)
-    simulator.save(
-        Path(output_file), x, theta, Path(prior_file) if prior_file else None
+        n_simulations,
+        output_file,
+        nuisance_pars,
+        cyclical_pars,
+        prior_file,
     )
 
 
 # ── save_data ─────────────────────────────────────────────────────────────────
-
-
 @cli.command(
     "save_data",
     short_help="Save observed data bins from the simulator to parquet.",
@@ -199,31 +197,17 @@ def save_data(
     nuisance_pars: list[str],
     cyclical_pars: list[str],
 ) -> None:
-    """Extract and save the observed data bins from the simulator.
-
-    Calls ``get_data_bins()`` on the simulator and writes the result to a
-    parquet file. Useful for producing the observed data vector ``x_o``
-    that is passed to ``inference``.
-
-    Example::
-
-        mach3sbi save_data \\
-            -m mypackage.simulator -s MySimulator \\
-            -c config.yaml -o observed.parquet
-    """
-    simulator = Simulator(
+    save_data_module(
         simulator_module,
         simulator_class,
-        Path(config),
-        nuisance_pars=nuisance_pars,
-        cyclical_pars=cyclical_pars,
+        config,
+        output_file,
+        nuisance_pars,
+        cyclical_pars,
     )
-    simulator.save_data(Path(output_file))
 
 
 # ── train ─────────────────────────────────────────────────────────────────────
-
-
 @cli.command("train", short_help="Train the NPE density estimator.")
 # I/O
 @optgroup.group("Input / Output")
@@ -444,54 +428,37 @@ def train(
             --model maf --hidden 128 --transforms 8 \\
             --max_epochs 50000 --stop_after_epochs 200
     """
-    logger = get_logger()
-    if compile_model:
-        logger.warning(
-            "Requested model compilation. In testing this has been shown to be slower."
-        )
 
-    posterior_config = PosteriorConfig(
-        model=model,
-        hidden_features=hidden,
-        num_transforms=transforms,
-        dropout_probability=dropout,
-        num_blocks=num_blocks,
-        num_bins=num_bins,
+    train_module(
+        save_file,
+        prior_path,
+        dataset,
+        nuisance_pars,
+        model,
+        hidden,
+        dropout,
+        num_blocks,
+        transforms,
+        num_bins,
+        batch_size,
+        max_epochs,
+        ema_alpha,
+        learning_rate,
+        stop_after_epochs,
+        validation_fraction,
+        num_workers,
+        autosave_every,
+        resume_checkpoint,
+        use_amp,
+        print_interval,
+        tensorboard_dir,
+        scheduler_patience,
+        show_progress,
+        compile_model,
     )
-
-    save_file = Path(save_file)
-    save_file.parent.mkdir(parents=True, exist_ok=True)
-
-    training_config = TrainingConfig(
-        save_path=save_file,
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        max_epochs=max_epochs,
-        stop_after_epochs=stop_after_epochs,
-        validation_fraction=validation_fraction,
-        num_workers=num_workers,
-        autosave_every=autosave_every,
-        resume_checkpoint=Path(resume_checkpoint) if resume_checkpoint else None,
-        use_amp=use_amp,
-        print_interval=print_interval,
-        show_progress=show_progress,
-        tensorboard_dir=Path(tensorboard_dir) if tensorboard_dir else None,
-        scheduler_patience=scheduler_patience,
-        compile=compile_model,
-        ema_alpha=ema_alpha,
-    )
-
-    inference_handler = InferenceHandler(Path(prior_path), nuisance_pars)
-    inference_handler.set_dataset(Path(dataset))
-    inference_handler.load_training_data()
-    inference_handler.create_posterior(posterior_config)
-    # model_config is passed through so every checkpoint is self-contained
-    inference_handler.train_posterior(training_config, model_config=posterior_config)
 
 
 # ── inference ─────────────────────────────────────────────────────────────────
-
-
 @cli.command(short_help="Sample the posterior given observed data.")
 # I/O
 @optgroup.group("Input / Output")
@@ -560,38 +527,76 @@ def inference(
             -i models/best.pt -r prior.pkl \\
             -n 100000 -o observed.parquet -s samples.parquet
     """
-    logger = get_logger()
-
-    if not isinstance(save_file, Path):
-        save_file = Path(save_file)
-
-    if save_file.is_file():
-        logger.warning("Found %s, deleting", save_file)
-        save_file.unlink()
-
-    save_file.parent.mkdir(parents=True, exist_ok=True)
-
-    logger = get_logger()
-
-    # PosteriorConfig is recovered from the checkpoint — the caller does not
-    # need to supply (and cannot accidentally mismatch) architecture flags.
-    inference_handler = InferenceHandler(Path(prior_path), nuisance_pars)
-    inference_handler.load_posterior(Path(posterior), posterior_config=None)
-
-    parameter_names = inference_handler.prior.prior_data.parameter_names
-    logger.info(parameter_names)
-    observed_data = np.array(pq.read_table(observed_data_file)["data"])
-
-    samples = inference_handler.sample_posterior(n_samples, observed_data).cpu().numpy()
-
-    pairplot(samples, labels=[[p] for p in parameter_names])
-    plt.savefig(save_file.with_suffix(".pdf"))
-
-    data_table = Table.from_pydict(
-        {p: samples[:, i] for i, p in enumerate(parameter_names)}
+    inference_module(
+        posterior,
+        prior_path,
+        save_file,
+        n_samples,
+        observed_data_file,
+        nuisance_pars,
     )
-    pq.write_table(data_table, save_file)
-    logger.info(f"Saved to {save_file}")
+
+
+# ── Importance sampling ─────────────────────────────────────────────────────────────────
+@cli.command(short_help="Importance sample the posterior given observed data.")
+@optgroup.group("Input / Output")
+@optgroup.option(
+    "--posterior",
+    "-i",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to a saved density estimator checkpoint (.pt / .ckpt). "
+    "The model architecture is read directly from the checkpoint — "
+    "no architecture flags are needed.",
+)
+# Sampling
+@optgroup.group("Sampling")
+@optgroup.option(
+    "--n_samples",
+    "-n",
+    required=True,
+    type=int,
+    help="Number of posterior samples to draw.",
+)
+@optgroup.option(
+    "--oversampling_factor",
+    required=False,
+    default=5,
+    type=int,
+    help="Oversampling rate.",
+)
+@optgroup.option(
+    "--max-sampling-batch",
+    required=False,
+    default=10_000,
+    type=int,
+    help="Max sampling batch size.",
+)
+@apply_options(_SIMULATOR_OPTIONS)
+def importance_sample(
+    simulator_module: str,
+    simulator_class: str,
+    config: Path,
+    output_file: Path,
+    n_samples: int,
+    oversampling_factor: int,
+    max_sampling_batch: int,
+    posterior: Path,
+    nuisance_pars: list[str],
+    cyclical_pars: list[str],
+):
+    importance_sample_module(
+        simulator_module,
+        simulator_class,
+        config,
+        output_file,
+        n_samples,
+        oversampling_factor,
+        max_sampling_batch,
+        posterior,
+        nuisance_pars,
+        cyclical_pars,
+    )
 
 
 @cli.command(short_help="Run model diagnostics")
@@ -656,45 +661,18 @@ def diagnostics(
     n_prior_samples: int,
     n_posterior_samples: int,
 ) -> None:
-    # Set up simulator
-    simulator = Simulator(
+    diagnostics_module(
         simulator_module,
         simulator_class,
         config,
-        nuisance_pars=nuisance_pars,
-        cyclical_pars=cyclical_pars,
+        posterior,
+        output_file,
+        nuisance_pars,
+        cyclical_pars,
+        make_sbc_rank,
+        make_expected_coverage,
+        make_tarp,
+        make_logl_comp,
+        n_prior_samples,
+        n_posterior_samples,
     )
-
-    prior = simulator.prior
-
-    prior_path = Path(f"/tmp/{datetime.now()}_prior.pkl")
-    prior.save(prior_path)
-
-    inference_handler = InferenceHandler(prior_path, nuisance_pars)
-    inference_handler.load_posterior(Path(posterior), posterior_config=None)
-
-    output_file.mkdir(parents=True, exist_ok=True)
-
-    if make_logl_comp:
-        compare_logl(
-            simulator,
-            inference_handler,
-            n_posterior_samples,
-            save_path=output_file / "logl_comp.pdf",
-        )
-
-    if not make_sbc_rank and not make_expected_coverage and not make_tarp:
-        return
-
-    sbc_diag = SBCDiagnostic(simulator, inference_handler, output_file)
-
-    sbc_diag.create_prior_samples(n_prior_samples)
-
-    if make_sbc_rank:
-        sbc_diag.rank_plot(n_posterior_samples)
-
-    if make_expected_coverage:
-        sbc_diag.expected_coverage(n_posterior_samples)
-
-    if make_tarp:
-        sbc_diag.tarp(n_posterior_samples)

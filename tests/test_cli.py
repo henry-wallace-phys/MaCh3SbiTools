@@ -69,8 +69,8 @@ def test_unknown_command(runner):
 # ---------------------------------------------------------------------------
 
 
-@patch("mach3sbitools.apps.main_cli.create_prior", return_value=MagicMock())
-@patch("mach3sbitools.apps.main_cli.get_simulator", return_value=MagicMock())
+@patch("mach3sbitools.apps.save_prior.create_prior", return_value=MagicMock())
+@patch("mach3sbitools.apps.save_prior.get_simulator", return_value=MagicMock())
 def test_create_prior_runs(mock_sim, mock_prior, runner, tmp_files):
     result = runner.invoke(
         cli,
@@ -104,7 +104,7 @@ def test_create_prior_missing_args(runner, tmp_files):
 # ---------------------------------------------------------------------------
 
 
-@patch("mach3sbitools.apps.main_cli.Simulator")
+@patch("mach3sbitools.apps.simulate.Simulator")
 def test_simulate_runs(mock_sim_cls, runner, tmp_files):
     mock_sim = MagicMock()
     mock_sim.simulate.return_value = (MagicMock(), MagicMock())
@@ -154,7 +154,7 @@ def test_simulate_missing_n(runner, tmp_files):
 # ---------------------------------------------------------------------------
 
 
-@patch("mach3sbitools.apps.main_cli.Simulator")
+@patch("mach3sbitools.apps.save_data.Simulator")
 def test_save_data_runs(mock_sim_cls, runner, tmp_files):
     mock_sim_cls.return_value = MagicMock()
     result = runner.invoke(
@@ -180,7 +180,7 @@ def test_save_data_runs(mock_sim_cls, runner, tmp_files):
 # ---------------------------------------------------------------------------
 
 
-@patch("mach3sbitools.apps.main_cli.InferenceHandler")
+@patch("mach3sbitools.apps.train.InferenceHandler")
 def test_train_runs(mock_handler_cls, runner, tmp_files):
     mock_handler_cls.return_value = MagicMock()
     result = runner.invoke(
@@ -215,7 +215,7 @@ def test_train_missing_required(runner, args):
     assert runner.invoke(cli, args).exit_code != 0
 
 
-@patch("mach3sbitools.apps.main_cli.InferenceHandler")
+@patch("mach3sbitools.apps.train.InferenceHandler")
 def test_train_config_forwarded(mock_handler_cls, runner, tmp_files):
     """Key training options reach TrainingConfig."""
     mock_handler_cls.return_value = MagicMock()
@@ -250,8 +250,8 @@ def test_train_config_forwarded(mock_handler_cls, runner, tmp_files):
 
 
 @pytest.mark.slow
-@patch("mach3sbitools.apps.main_cli.pairplot")
-@patch("mach3sbitools.apps.main_cli.InferenceHandler")
+@patch("mach3sbitools.apps.inference.pairplot")
+@patch("mach3sbitools.apps.inference.InferenceHandler")
 def test_inference_runs(mock_handler_cls, mock_pairplot, runner, tmp_files):
     mock_handler = MagicMock()
     mock_handler.prior.prior_data.parameter_names = np.array(["p1"])
@@ -273,7 +273,7 @@ def test_inference_runs(mock_handler_cls, mock_pairplot, runner, tmp_files):
             "-r",
             str(tmp_files["prior"]),
             "-s",
-            str(tmp_files["inference"] / "samples.parquet"),  # ← file, not dir
+            str(tmp_files["inference"] / "samples.parquet"),
             "-n",
             "100",
             "-o",
