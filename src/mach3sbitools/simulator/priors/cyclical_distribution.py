@@ -77,8 +77,8 @@ class CyclicalDistribution(torch.distributions.Distribution):
         :returns: PDF values, same shape as *theta*.
         """
         # Use scalar bounds to avoid broadcasting theta's shape against (n_params,).
-        in_bounds = (theta > _LOWER) & (theta < _UPPER)
-        pdf = torch.zeros(theta.shape, dtype=torch.double)
+        in_bounds = ((theta > _LOWER) & (theta < _UPPER)).to(self.device)
+        pdf = torch.zeros(theta.shape, dtype=torch.double, device=self.device)
         pdf[in_bounds] = (0.5 / torch.pi) * (
             torch.sin((theta[in_bounds] + 2 * torch.pi) / 4) ** 2
         )
@@ -92,8 +92,8 @@ class CyclicalDistribution(torch.distributions.Distribution):
         :returns: CDF values in ``[0, 1]``, same shape as *theta*.
         """
         # Use scalar bounds to avoid broadcasting theta's shape against (n_params,).
-        in_bounds = (theta > _LOWER) & (theta < _UPPER)
-        cdf = torch.zeros(theta.shape, dtype=torch.double)
+        in_bounds = ((theta > _LOWER) & (theta < _UPPER)).to(self.device)
+        cdf = torch.zeros(theta.shape, dtype=torch.double, device=self.device)
         cdf[in_bounds] = (0.5 / torch.pi) * (
             theta[in_bounds] / 2 + torch.sin(theta[in_bounds] / 2) + torch.pi
         )
@@ -111,7 +111,7 @@ class CyclicalDistribution(torch.distributions.Distribution):
         """
         pdf = self.pdf(value)
         in_bounds = pdf > 1e-8
-        log_p = torch.full(pdf.shape, -np.inf, dtype=torch.double)
+        log_p = torch.full(pdf.shape, -np.inf, dtype=torch.double, device=self.device)
         log_p[in_bounds] = torch.log(pdf[in_bounds])
         return log_p
 
@@ -165,7 +165,7 @@ class CyclicalDistribution(torch.distributions.Distribution):
         n_points = len(theta_grid)
         u_flat = u.reshape(-1)
         indices = torch.searchsorted(cdf_grid, u_flat).clamp(0, n_points - 1)
-        return theta_grid[indices].reshape(u.shape)
+        return theta_grid[indices].reshape(u.shape).to(self.device)
 
     def sample(
         self, sample_shape: torch.Size | list[int] | tuple[int, ...] = torch.Size()
@@ -192,4 +192,4 @@ class CyclicalDistribution(torch.distributions.Distribution):
             samples.squeeze(0)
             if not sample_shape
             else samples.reshape(*sample_shape, len(self.nominals))
-        )
+        ).to(self.device)
