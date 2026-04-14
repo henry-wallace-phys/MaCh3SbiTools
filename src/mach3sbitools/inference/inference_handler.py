@@ -81,6 +81,8 @@ class InferenceHandler:
             Passed directly to
             :meth:`~mach3sbitools.simulator.Prior.set_nuisance_filter`.
         """
+        self.device_handler = TorchDeviceHandler()
+
         self.prior = load_prior(prior_path)
         self.parameter_names = self.prior.prior_data.parameter_names
         self.nuisance_pars = nuisance_pars
@@ -97,7 +99,6 @@ class InferenceHandler:
         self.posterior = None
         self._density_estimator: nn.Module | None = None
         self._tensor_dataset: TensorDataset | None = None
-        self.device_handler = TorchDeviceHandler()
 
     # ── Data ──────────────────────────────────────────────────────────────────
 
