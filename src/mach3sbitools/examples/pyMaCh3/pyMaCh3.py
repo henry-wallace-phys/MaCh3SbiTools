@@ -12,6 +12,10 @@ try:
 except ImportError:
     HAS_PYMACH3 = False
 
+from mach3sbitools.utils.logger import get_logger
+
+logger = get_logger()
+
 
 class pyMaCh3Simulator:
     def __init__(self, fitter_config: Path):
@@ -33,9 +37,9 @@ class pyMaCh3Simulator:
             yaml_cfg = safe_load(f)
 
         # We assume a single parameter config is used
-        systematic_configs = (
-            yaml_cfg.get("General", {}).get("Systematics").get("XsecCovFile")
-        )
+        systematics_opts = yaml_cfg.get("General", {}).get("Systematics", {})
+
+        systematic_configs = systematics_opts.get("XsecCovFile", [])
 
         self.parameter_handler = m3.parameters.ParameterHandlerGeneric(
             [str(s) for s in systematic_configs]
@@ -44,12 +48,20 @@ class pyMaCh3Simulator:
         # We'll use this in a minute! (contains everything about or systematic model!)
         self.parameter_properties = process_parameters(self.parameter_handler)
 
+        # We also need to get additional fixed pars from the config
+        additional_fixed_names = systematics_opts.get("XsecFix", [])
+        additional_fixed_mask = np.array(
+            [n in additional_fixed_names for n in self.parameter_properties.names]
+        )
+
         # We'll use this a lot
-        self._fix_mask = ~self.parameter_properties.fixed
-        self.n_params = len(self.parameter_properties[self._fix_mask])
+        self._fixed_mask = self.parameter_properties.fixed | additional_fixed_mask
+        self.n_params = len(self.parameter_properties[~self._fixed_mask])
+
+        logger.info(f"Fixing {self.parameter_properties[self._fixed_mask]}")
 
         # Saves doing this every time!
-        self._parameter_properties_masked = self.parameter_properties[self._fix_mask]
+        self._parameter_properties_masked = self.parameter_properties[~self._fixed_mask]
 
         # Now we load in the samples
         self.samples = self._get_sample_handlers(yaml_cfg, self.parameter_handler)
@@ -150,7 +162,7 @@ class pyMaCh3Simulator:
         # Make a copy (little expensive)
         set_values = self.parameter_properties.nominals.copy()
         # Set non-fixed values
-        set_values[self._fix_mask] = theta
+        set_values[~self._fixed_mask] = theta
 
         self.parameter_handler.set_parameters(set_values)
 
