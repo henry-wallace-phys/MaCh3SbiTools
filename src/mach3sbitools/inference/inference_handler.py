@@ -224,24 +224,30 @@ class InferenceHandler:
         lightning_module = SBILightningModule(density_estimator, config, model_config)
         data_module = SBIDataModule(self._tensor_dataset, config)
 
+        # Model checkpoint needs some overriding to save properly
+        model_checkpoint = ModelCheckpoint(
+            dirpath=(
+                config.save_path.parent / "checkpoints" if config.save_path else None
+            ),
+            filename=f"{config.save_path.stem if config.save_path else ''}"
+            + "{epoch}-{ema_val_loss:.4f}",
+            monitor="ema_val_loss",
+            save_top_k=3,
+            every_n_epochs=config.autosave_every,
+            save_last=True,
+        )
+
+        model_checkpoint.CHECKPOINT_NAME_LAST = (
+            str(config.save_path.stem) if config.save_path else "last"
+        )
+
         callbacks = [
             EarlyStopping(
                 monitor="ema_val_loss",
                 patience=config.stop_after_epochs,
                 mode="min",
             ),
-            ModelCheckpoint(
-                dirpath=(
-                    config.save_path.parent / "checkpoints"
-                    if config.save_path
-                    else None
-                ),
-                filename="{epoch}-{ema_val_loss:.4f}",
-                monitor="ema_val_loss",
-                save_top_k=3,
-                every_n_epochs=config.autosave_every,
-                save_last=True,
-            ),
+            model_checkpoint,
             LearningRateMonitor(logging_interval="epoch"),
         ]
 
