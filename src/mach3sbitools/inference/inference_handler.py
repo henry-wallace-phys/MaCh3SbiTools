@@ -226,9 +226,7 @@ class InferenceHandler:
 
         # Model checkpoint needs some overriding to save properly
         model_checkpoint = ModelCheckpoint(
-            dirpath=(
-                config.save_path.parent / "checkpoints" if config.save_path else None
-            ),
+            dirpath=(config.save_path.parent if config.save_path else None),
             filename=f"{config.save_path.stem if config.save_path else ''}"
             + "{epoch}-{ema_val_loss:.4f}",
             monitor="ema_val_loss",
