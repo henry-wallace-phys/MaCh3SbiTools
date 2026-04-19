@@ -49,6 +49,8 @@ from mach3sbitools.utils.logger import get_logger
 logger = get_logger()
 torch.set_float32_matmul_precision("medium")
 
+torch.serialization.add_safe_globals([TrainingConfig, PosteriorConfig])
+
 
 def _select_accelerator_and_strategy():
     if torch.cuda.is_available():

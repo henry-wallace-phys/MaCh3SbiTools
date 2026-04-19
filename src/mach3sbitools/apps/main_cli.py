@@ -77,6 +77,13 @@ _SIMULATOR_OPTIONS = [
         multiple=True,
         help="Parameter name patterns (fnmatch-style) that should use a cyclical sinusoidal prior over [-2π, 2π].",
     ),
+    click.option(
+        "--flipped_pars",
+        "--fl",
+        type=Path,
+        multiple=True,
+        help="Parameter name patterns (fnmatch-style) that should flip around 0",
+    ),
 ]
 
 
@@ -109,6 +116,7 @@ def save_prior(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
 ) -> None:
     """Generate a Prior from a simulator and save it to disk.
 
@@ -129,6 +137,7 @@ def save_prior(
         output_file,
         nuisance_pars,
         cyclical_pars,
+        flipped_pars,
     )
 
 
@@ -156,6 +165,7 @@ def simulate(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
     prior_file: Path | None,
 ) -> None:
     """Draw samples from the prior and run the simulator for each.
@@ -179,6 +189,7 @@ def simulate(
         output_file,
         nuisance_pars,
         cyclical_pars,
+        flipped_pars,
         prior_file,
     )
 
@@ -196,6 +207,7 @@ def save_data(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
 ) -> None:
     save_data_module(
         simulator_module,
@@ -204,6 +216,7 @@ def save_data(
         output_file,
         nuisance_pars,
         cyclical_pars,
+        flipped_pars,
     )
 
 
@@ -584,6 +597,7 @@ def importance_sample(
     posterior: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
 ):
     importance_sample_module(
         simulator_module,
@@ -596,6 +610,7 @@ def importance_sample(
         posterior,
         nuisance_pars,
         cyclical_pars,
+        flipped_pars,
     )
 
 
@@ -653,6 +668,7 @@ def diagnostics(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
     # Plot opts.
     make_sbc_rank: bool,
     make_expected_coverage: bool,
@@ -669,6 +685,7 @@ def diagnostics(
         output_file,
         nuisance_pars,
         cyclical_pars,
+        flipped_pars,
         make_sbc_rank,
         make_expected_coverage,
         make_tarp,

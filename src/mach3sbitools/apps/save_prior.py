@@ -10,6 +10,7 @@ def save_prior_module(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
 ) -> None:
     """Generate a Prior from a simulator and save it to disk.
 
@@ -24,5 +25,5 @@ def save_prior_module(
             -c config.yaml -o prior.pkl
     """
     injector = get_simulator(simulator_module, simulator_class, Path(config))
-    prior = create_prior(injector, nuisance_pars, cyclical_pars)
+    prior = create_prior(injector, nuisance_pars, cyclical_pars, flipped_pars)
     prior.save(Path(output_file))

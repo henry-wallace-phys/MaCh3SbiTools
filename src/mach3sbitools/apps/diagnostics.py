@@ -14,6 +14,7 @@ def diagnostics_module(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
     # Plot opts.
     make_sbc_rank: bool,
     make_expected_coverage: bool,
@@ -29,6 +30,7 @@ def diagnostics_module(
         config,
         nuisance_pars=nuisance_pars,
         cyclical_pars=cyclical_pars,
+        flipped_pars=flipped_pars,
     )
 
     prior = simulator.prior

@@ -1,12 +1,17 @@
 """
 Prior distribution for MaCh3 SBI.
 
-Constructs a composite prior from three distribution types, checked in order:
+Constructs a composite prior from four distribution types, checked in order:
 
 1. **Cyclical** — parameters matching *cyclical_parameters* patterns, forced
    to bounds of ``[-2π, 2π]``.
-2. **Flat (Uniform)** — parameters flagged via *flat_msk* and not cyclical.
-3. **Gaussian** — all remaining parameters, modelled as a
+2. **Flipped Uniform** — parameters matching *flipped_parameters* patterns.
+   Support is ``[lower, upper] + [-upper, -lower]`` where ``lower``/``upper``
+   are read from the parameter's existing bounds (which must be positive and
+   satisfy ``0 < lower < upper``).
+3. **Flat (Uniform)** — parameters flagged via *flat_msk* and not cyclical or
+   flipped.
+4. **Gaussian** — all remaining parameters, modelled as a
    :class:`~torch.distributions.MultivariateNormal`.
 """
 
@@ -25,6 +30,7 @@ from mach3sbitools.utils import TorchDeviceHandler, get_logger
 from ..simulator_injector import SimulatorProtocol
 from .cyclical_distribution import CyclicalDistribution
 from .dataclasses import PriorData
+from .flipped_uniform_distribution import FlippedUniformDistribution
 
 size_: TypeAlias = torch.Size | list[int] | tuple[int, ...]
 
@@ -64,7 +70,8 @@ class MaskDistributionMap:
 
 class Prior(torch.distributions.Distribution):
     """
-    Composite MaCh3 prior combining cyclical, flat, and Gaussian components.
+    Composite MaCh3 prior combining cyclical, flipped-uniform, flat, and
+    Gaussian components.
 
     Designed to replicate MaCh3's prior construction
     (https://github.com/mach3-software/MaCh3) and satisfy the ``sbi``
@@ -73,7 +80,11 @@ class Prior(torch.distributions.Distribution):
     Parameters are assigned to distributions in the following order:
 
     - **Cyclical** — matched by *cyclical_parameters* (fnmatch patterns).
-    - **Flat** — flagged by *flat_msk* and not cyclical.
+    - **Flipped Uniform** — matched by *flipped_parameters* (fnmatch patterns).
+      Each matched parameter must have positive bounds
+      ``0 < lower_bound < upper_bound``; its support becomes
+      ``[lower, upper] + [-upper, -lower]``.
+    - **Flat** — flagged by *flat_msk* and not cyclical or flipped.
     - **Gaussian** — everything else.
 
     .. warning::
@@ -91,6 +102,7 @@ class Prior(torch.distributions.Distribution):
         flat_msk: list[bool] | None = None,
         cyclical_parameters: list[str] | None = None,
         nuisance_parameters: list[str] | None = None,
+        flipped_parameters: list[str] | None = None,
     ):
         """
         Construct the composite prior.
@@ -102,6 +114,10 @@ class Prior(torch.distributions.Distribution):
             parameters. Matched parameters receive bounds of ``±2π``.
         :param nuisance_parameters: fnmatch patterns selecting parameters to
             exclude. Fixed at construction time — cannot be changed later.
+        :param flipped_parameters: fnmatch patterns selecting parameters that
+            use a bimodal uniform prior over
+            ``[lower, upper] + [-upper, -lower]``.  The bounds are read from
+            *prior_data* and must satisfy ``0 < lower < upper``.
         """
         self.device_handler = TorchDeviceHandler()
         self._prior_data = prior_data
@@ -134,15 +150,41 @@ class Prior(torch.distributions.Distribution):
             )
             self._priors.append(self._get_cyclical_map(cyclical_mask))
 
+        # ── Flipped-uniform mask ───────────────────────────────────────────
+        if flipped_parameters:
+            flipped_mask_ = [
+                any(fnmatch.fnmatch(p, f) for f in flipped_parameters)
+                for p in self.prior_data.parameter_names
+            ]
+            flipped_mask = self.device_handler.to_tensor(flipped_mask_).bool()
+            # Flipped params must not also be cyclical
+            flipped_mask = flipped_mask & ~cyclical_mask
+        else:
+            flipped_mask = torch.zeros(
+                n_params, dtype=torch.bool, device=self.device_handler.device
+            )
+
+        # Store for use in check_bounds — flipped params are valid in EITHER
+        # region so the standard lower/upper bounds check would incorrectly
+        # reject samples drawn from the negative region.
+        self._flipped_mask = flipped_mask
+
+        if any(flipped_mask):
+            self._priors.extend(self._get_flipped_maps(flipped_mask))
+
         # ── Flat mask ──────────────────────────────────────────────────────
         # Guard against None so the tensor conversion doesn't crash.
         flat_msk = flat_msk if flat_msk is not None else [False] * n_params
-        flat_mask = self.device_handler.to_tensor(flat_msk).bool() & ~cyclical_mask
+        flat_mask = (
+            self.device_handler.to_tensor(flat_msk).bool()
+            & ~cyclical_mask
+            & ~flipped_mask
+        )
         if any(flat_mask):
             self._priors.append(self._get_flat_map(flat_mask))
 
         # ── Gaussian mask ──────────────────────────────────────────────────
-        gaussian_mask = ~cyclical_mask & ~flat_mask
+        gaussian_mask = ~cyclical_mask & ~flipped_mask & ~flat_mask
         if any(gaussian_mask):
             self._priors.append(self._get_gaussian_map(gaussian_mask))
 
@@ -182,6 +224,56 @@ class Prior(torch.distributions.Distribution):
         cyclical_dist = CyclicalDistribution(cyclical_data.nominals)
         return MaskDistributionMap(cyclical_mask, cyclical_dist)
 
+    def _get_flipped_maps(
+        self, flipped_mask: torch.Tensor
+    ) -> list[MaskDistributionMap]:
+        """
+        Build one :class:`MaskDistributionMap` per flipped parameter.
+
+        Each flipped parameter may have *different* ``lower``/``upper`` bounds,
+        so a separate :class:`~.FlippedUniformDistribution` is created for each
+        one.  The individual single-parameter masks are disjoint and together
+        cover exactly the bits set in *flipped_mask*.
+
+        :param flipped_mask: Boolean tensor of shape ``(n_params,)`` with
+            ``True`` for every flipped parameter.
+        :returns: List of :class:`MaskDistributionMap` objects, one per
+            flipped parameter.
+        :raises ValueError: If any matched parameter has bounds that violate
+            ``0 < lower < upper``.
+        """
+        maps: list[MaskDistributionMap] = []
+        flipped_indices = flipped_mask.nonzero(as_tuple=True)[0]
+
+        for idx in flipped_indices:
+            # Build a single-parameter mask
+            single_mask = torch.zeros(
+                len(flipped_mask), dtype=torch.bool, device=self.device_handler.device
+            )
+            single_mask[idx] = True
+
+            lower_val = float(self.prior_data.lower_bounds[idx].item())
+            upper_val = float(self.prior_data.upper_bounds[idx].item())
+            param_name = self.prior_data.parameter_names[idx.item()]
+
+            if lower_val <= 0 or upper_val <= lower_val:
+                raise ValueError(
+                    f"Flipped parameter '{param_name}' has bounds "
+                    f"[{lower_val}, {upper_val}] but FlippedUniformDistribution "
+                    f"requires 0 < lower < upper.  "
+                    f"Set positive bounds in your simulator config."
+                )
+
+            single_data = self.prior_data[single_mask]
+            dist = FlippedUniformDistribution(
+                nominals=single_data.nominals,
+                lower=lower_val,
+                upper=upper_val,
+            )
+            maps.append(MaskDistributionMap(single_mask, dist))
+
+        return maps
+
     def _get_flat_map(self, flat_mask: torch.Tensor) -> MaskDistributionMap:
         flat_data = self.prior_data[flat_mask]
         flat_dist = Uniform(flat_data.lower_bounds, flat_data.upper_bounds)
@@ -189,8 +281,35 @@ class Prior(torch.distributions.Distribution):
 
     def _get_gaussian_map(self, gaussian_mask: torch.Tensor) -> MaskDistributionMap:
         gaussian_data = self.prior_data[gaussian_mask]
+
+        cov = gaussian_data.covariance_matrix
+        # Symmetrize to correct floating point asymmetry
+        cov = (cov + cov.transpose(-1, -2)) / 2
+
+        # Attempt Cholesky; if it fails, apply jitter until it succeeds
+        jitter = 1e-6
+        max_attempts = 6
+        for attempt in range(max_attempts):
+            try:
+                torch.linalg.cholesky(cov)
+                break
+            except torch.linalg.LinAlgError:
+                get_logger().warning(
+                    f"Covariance matrix not positive definite (attempt {attempt + 1}); "
+                    f"adding jitter {jitter}"
+                )
+                eye = torch.eye(cov.shape[-1], dtype=cov.dtype, device=cov.device)
+                cov = cov + jitter * eye
+                jitter *= 10
+        else:
+            raise ValueError(
+                f"Covariance matrix could not be made positive definite after "
+                f"{max_attempts} attempts. Last jitter: {jitter / 10}"
+            )
+
+        get_logger().info("Decomposed matrix")
         gaussian_dist = MultivariateNormal(
-            gaussian_data.nominals, covariance_matrix=gaussian_data.covariance_matrix
+            gaussian_data.nominals, covariance_matrix=cov
         )
         return MaskDistributionMap(gaussian_mask, gaussian_dist)
 
@@ -258,32 +377,37 @@ class Prior(torch.distributions.Distribution):
             if isinstance(mask_map.distribution, MultivariateNormal):
                 lb = self.prior_data.lower_bounds[mask_map.mask]
                 ub = self.prior_data.upper_bounds[mask_map.mask]
-                remaining = torch.ones(
-                    sample_shape, dtype=torch.bool, device=self.device_handler.device
-                )
+                n_gauss = int(mask_map.mask.sum())
+
                 out = torch.empty(
-                    (*sample_shape, int(mask_map.mask.sum())),
+                    (*sample_shape, n_gauss),
                     dtype=torch.double,
                     device=self.device_handler.device,
                 )
+
+                # Track which parameters still need valid samples
+                remaining = torch.ones(
+                    (*sample_shape, n_gauss),
+                    dtype=torch.bool,
+                    device=self.device_handler.device,
+                )
+
                 for _ in range(10_000):
                     if not remaining.any():
                         break
                     new = mask_map.distribution.sample(sample_shape).to(torch.double)
-                    in_bounds = ((new >= lb) & (new <= ub)).all(dim=-1)
+                    in_bounds = (new >= lb) & (
+                        new <= ub
+                    )  # shape: (*sample_shape, n_gauss)
                     accepted = in_bounds & remaining
                     out[accepted] = new[accepted]
                     remaining[accepted] = False
+
                 if remaining.any():
                     raise RuntimeError(
-                        "Gaussian rejection sampling failed after 10,000 iterations"
+                        "Gaussian rejection sampling failed after 100 iterations"
                     )
                 samples[..., mask_map.mask] = out
-            else:
-                samples[..., mask_map.mask] = mask_map.distribution.sample(
-                    sample_shape
-                ).to(torch.double)
-
         return samples
 
     def rsample(self, sample_shape=torch.Size([])) -> torch.Tensor:
@@ -303,14 +427,29 @@ class Prior(torch.distributions.Distribution):
 
     def check_bounds(self, params: torch.Tensor) -> torch.Tensor:
         """
-        Check whether each sample in *params* lies within the prior bounds.
+        Check whether each sample in *params* lies within the prior support.
+
+        For most parameters this is the standard interval
+        ``[lower_bound, upper_bound]``.  For flipped parameters the support
+        is the union of two symmetric regions
+        ``[lower, upper] + [-upper, -lower]``, so a sample is valid when
+        its *absolute value* lies in ``[lower, upper]``.
 
         :param params: Tensor of shape ``(n_samples, n_params)``.
         :returns: Boolean tensor of shape ``(n_samples,)``.
         """
-        in_bounds = (params >= self.prior_data.lower_bounds) & (
-            params <= self.prior_data.upper_bounds
-        )
+        lb = self.prior_data.lower_bounds
+        ub = self.prior_data.upper_bounds
+
+        # Standard interval check for all parameters
+        in_bounds = (params >= lb) & (params <= ub)
+
+        # Override flipped parameters: valid iff |value| in [lower, upper]
+        if self._flipped_mask.any():
+            abs_params = params.abs()
+            in_flipped = (abs_params >= lb) & (abs_params <= ub)
+            in_bounds[:, self._flipped_mask] = in_flipped[:, self._flipped_mask]
+
         return self.device_handler.to_tensor(in_bounds.all(dim=-1))
 
     # ── Persistence ────────────────────────────────────────────────────────────
@@ -337,6 +476,7 @@ class Prior(torch.distributions.Distribution):
         for i, mask_map in enumerate(self._priors):
             self._priors[i] = mask_map.to(device)
         self._nuisance_filter = self._nuisance_filter.to(device)
+        self._flipped_mask = self._flipped_mask.to(device)
         return self
 
 
@@ -388,6 +528,7 @@ def create_prior(
     simulator_instance: SimulatorProtocol,
     nuisance_pars: list[str] | None = None,
     cyclical_pars: list[str] | None = None,
+    flipped_pars: list[str] | None = None,
 ) -> Prior:
     """
     Convenience function to build a :class:`Prior` from a simulator instance.
@@ -398,7 +539,12 @@ def create_prior(
 
     .. code-block:: console
 
-        prior = create_prior(simulator, nuisance_pars=["syst_*"], cyclical_pars=["angle"])
+        prior = create_prior(
+            simulator,
+            nuisance_pars=["syst_*"],
+            cyclical_pars=["angle"],
+            flipped_pars=["delta_cp"],
+        )
         prior.save(Path("prior.pkl"))
 
     :param simulator_instance: An object implementing :class:`SimulatorProtocol`.
@@ -406,6 +552,9 @@ def create_prior(
         prior (e.g. ``['syst_*']``).
     :param cyclical_pars: fnmatch patterns for parameters that should use a
         cyclical sinusoidal prior over ``[-2π, 2π]``.
+    :param flipped_pars: fnmatch patterns for parameters that should use a
+        bimodal uniform prior over ``[lower, upper] + [-upper, -lower]``,
+        where ``lower``/``upper`` come from the simulator's parameter bounds.
     :returns: Configured :class:`Prior` ready for use with ``sbi``.
     """
     logger.info("Creating Prior")
@@ -431,12 +580,16 @@ def create_prior(
         covariance_matrix=covariance,
     )
 
-    return Prior(
+    prior = Prior(
         prior_data=data,
         flat_msk=flat_pars,
         nuisance_parameters=nuisance_pars,
         cyclical_parameters=cyclical_pars,
+        flipped_parameters=flipped_pars,
     )
+
+    get_logger().info("Prior constructed")
+    return prior
 
 
 def load_prior(prior_path: Path, device=torch.device("cpu")) -> Prior:

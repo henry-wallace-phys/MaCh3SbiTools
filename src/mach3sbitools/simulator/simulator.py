@@ -39,6 +39,7 @@ class Simulator:
         config: Path,
         nuisance_pars: list[str] | None = None,
         cyclical_pars: list[str] | None = None,
+        flipped_pars: list[str] | None = None,
     ):
         """
         Instantiate the simulator and build its prior.
@@ -52,6 +53,8 @@ class Simulator:
             the prior and saved outputs.
         :param cyclical_pars: fnmatch patterns for parameters that use a
             cyclical sinusoidal prior over ``[-2π, 2π]``.
+        :param flipped_pars: fnmatch patterns for parameters that can "flip"
+            around 0
         """
         self.simulator_wrapper: SimulatorProtocol = get_simulator(
             module_name, class_name, config
@@ -60,6 +63,7 @@ class Simulator:
             self.simulator_wrapper,
             nuisance_pars=nuisance_pars,
             cyclical_pars=cyclical_pars,
+            flipped_pars=flipped_pars,
         )
 
     def simulate(self, n_samples: int) -> tuple[SimulatorData, SimulatorData]:
@@ -75,8 +79,10 @@ class Simulator:
         :returns: Tuple of ``(theta, x)`` arrays, each of length ≤ *n_samples*.
             Fewer samples are returned if any simulations failed.
         """
+        get_logger().info("Beginning sampling")
         samples = self.prior.sample((n_samples,))
         theta = samples.cpu().numpy()
+        get_logger().info("Prior sampled")
 
         valid_theta: list[np.ndarray] = []
         valid_x: list[np.ndarray] = []
