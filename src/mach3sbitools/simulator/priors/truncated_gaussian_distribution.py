@@ -131,10 +131,6 @@ class TruncatedGaussianDistribution(MultivariateNormal):
     ) -> torch.Tensor:
         """
         Draw exact samples via sequential conditional sampling.
-
-        No burn-in, no thinning, no rejection.  All samples are
-        guaranteed to lie strictly inside the bounding box.
-
         Algorithm
         ---------
         Iterate over dimensions i = 0 … d-1.  At each step, the

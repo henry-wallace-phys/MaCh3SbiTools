@@ -443,6 +443,17 @@ class InferenceHandler:
             torch.zeros(2, theta_dim),
             torch.zeros(2, x_dim),
         )
+
+        # Prime structured z-score buffers so their shapes match the checkpoint.
+        # z_score_x="structured" and z_score_theta="structured" use lazy
+        # initialisation — buffer shapes are only set after the first forward
+        # pass, so without this the shapes are scalar and load_state_dict fails.
+        with torch.no_grad():
+            density_estimator(
+                torch.zeros(2, theta_dim),
+                torch.zeros(2, x_dim),
+            )
+
         density_estimator.load_state_dict(state_dict)
         density_estimator.to(self.device_handler.device).eval()
         self._density_estimator = density_estimator
