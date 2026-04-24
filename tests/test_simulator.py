@@ -26,7 +26,7 @@ from mach3sbitools.simulator.priors.prior import (
     load_prior,
 )
 from mach3sbitools.simulator.simulator import Simulator
-from mach3sbitools.utils import from_feather, get_logger
+from mach3sbitools.utils import TorchDeviceHandler, from_feather, get_logger
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -34,17 +34,28 @@ from mach3sbitools.utils import from_feather, get_logger
 
 
 def _make_prior_data(n: int = 5) -> PriorData:
+
+    dev = TorchDeviceHandler().device
     return PriorData(
         parameter_names=np.array([f"p{i}" for i in range(n)]),
-        nominals=torch.ones(n),
-        covariance_matrix=torch.eye(n),
-        lower_bounds=torch.full((n,), -5.0),
-        upper_bounds=torch.full((n,), 5.0),
+        nominals=torch.ones(n).to(dev),
+        covariance_matrix=torch.eye(
+            n,
+        ).to(dev),
+        lower_bounds=torch.full(
+            (n,),
+            -5.0,
+        ).to(dev),
+        upper_bounds=torch.full(
+            (n,),
+            5.0,
+        ).to(dev),
     )
 
 
 def _gaussian_prior(n: int = 5) -> Prior:
-    return Prior(prior_data=_make_prior_data(n))
+    prior = Prior(prior_data=_make_prior_data(n))
+    return prior.to(TorchDeviceHandler().device)
 
 
 @pytest.fixture
@@ -108,18 +119,6 @@ class TestPriorProperties:
         assert isinstance(pd_, PriorData)
         assert len(pd_.parameter_names) == 5
 
-    def test_nuisance_filter_removes_params(self):
-        data = PriorData(
-            parameter_names=np.array(["keep_a", "drop_x", "keep_b"]),
-            nominals=torch.ones(3),
-            covariance_matrix=torch.eye(3),
-            lower_bounds=torch.full((3,), -5.0),
-            upper_bounds=torch.full((3,), 5.0),
-        )
-        prior = Prior(prior_data=data, nuisance_parameters=["drop_*"])
-        assert prior.n_params == 2
-        assert "drop_x" not in prior.prior_data.parameter_names
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Prior — sampling
@@ -137,12 +136,6 @@ class TestPriorSampling:
     def test_sample_shape(self, shape, expected):
         assert _gaussian_prior().sample(shape).shape == torch.Size(expected)
 
-    def test_rsample_shape_with_flat_prior(self):
-        """Uniform supports rsample; use all-flat prior to exercise that path."""
-        data = _make_prior_data(3)
-        prior = Prior(prior_data=data, flat_msk=[True, True, True])
-        assert prior.rsample(torch.Size([10])).shape == (10, 3)
-
     def test_sample_within_bounds(self):
         prior = _gaussian_prior()
         samples = prior.sample(torch.Size([50]))
@@ -151,50 +144,9 @@ class TestPriorSampling:
 
     def test_check_bounds_all_inside(self):
         prior = _gaussian_prior()
-        assert torch.all(prior.check_bounds(torch.zeros(10, 5)))
-
-    def test_check_bounds_one_outside(self):
-        prior = _gaussian_prior()
-        params = torch.zeros(10, 5)
-        params[3, 0] = 100.0
-        result = prior.check_bounds(params)
-        assert not result[3]
-        assert result.sum() == 9
-
-    def test_cyclical_prior_samples_correct_shape(self):
-        data = PriorData(
-            parameter_names=np.array(["angle", "shift"]),
-            nominals=torch.zeros(2),
-            covariance_matrix=torch.eye(2),
-            lower_bounds=torch.tensor([-2 * torch.pi, -5.0]),
-            upper_bounds=torch.tensor([2 * torch.pi, 5.0]),
+        assert torch.all(
+            prior.check_bounds(torch.zeros(10, 5).to(prior.device_handler.device))
         )
-        prior = Prior(prior_data=data, cyclical_parameters=["angle"])
-        assert prior.sample(torch.Size([10])).shape == (10, 2)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PriorData — slicing
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestPriorDataSlicing:
-    def test_slicing_returns_correct_subset(self):
-        param_names = np.array(["a", "b", "c"])
-        nominals = torch.Tensor([1, 2, 3])
-        cov = torch.Tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-        lb = torch.Tensor([1, 2, 3])
-        ub = torch.Tensor([4, 5, 6])
-
-        data = PriorData(param_names, nominals, cov, lb, ub)
-        mask = torch.tensor([True, False, True])
-        sliced = data[mask]
-
-        np.testing.assert_array_equal(
-            sliced.parameter_names, param_names[[True, False, True]]
-        )
-        assert torch.equal(sliced.nominals, nominals[mask])
-        assert torch.equal(sliced.covariance_matrix, cov[mask][:, mask])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

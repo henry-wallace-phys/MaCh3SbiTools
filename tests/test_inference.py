@@ -22,7 +22,7 @@ from torch.utils.data import TensorDataset
 
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.simulator import load_prior
-from mach3sbitools.utils.config import TrainingConfig
+from mach3sbitools.utils import TorchDeviceHandler, TrainingConfig
 
 N_SAMPLES = 10000
 
@@ -54,9 +54,9 @@ def _tiny_model(theta_dim: int = 4, x_dim: int = 6) -> torch.nn.Module:
 def _minimal_config(tmp_path: Path, **kwargs) -> TrainingConfig:
     defaults: dict = dict(
         save_path=tmp_path / "model.ckpt",
-        batch_size=32,
+        batch_size=1024,
         max_epochs=2,
-        stop_after_epochs=10,
+        stop_after_epochs=3,
         autosave_every=1,
         print_interval=1,
         show_progress=False,
@@ -78,7 +78,9 @@ def _minimal_config(tmp_path: Path, **kwargs) -> TrainingConfig:
 @pytest.fixture(scope="session")
 def nominal_observation(simulator_injector):
     rng = np.random.default_rng(42)
-    return (
+    device_handler = TorchDeviceHandler()
+
+    return device_handler.to_tensor(
         rng.poisson(lam=1, size=len(simulator_injector.get_data_bins()))
         .astype(np.float32)
         .tolist()
@@ -251,16 +253,17 @@ class TestInferenceHandlerHappyPath:
         a = trained_handler.sample_posterior(100, nominal_observation)
         torch.manual_seed(42)
         b = trained_handler.sample_posterior(100, nominal_observation)
+
         assert torch.allclose(a, b)
 
     def test_x_dtype_matches_training(self, trained_handler, nominal_observation):
         trained_dtype = trained_handler._tensor_dataset.tensors[1].dtype
-        x_tensor = torch.tensor([nominal_observation])
+        x_tensor = nominal_observation.unsqueeze(0)
         assert x_tensor.dtype == trained_dtype
 
     def test_x_shape_matches_training(self, trained_handler, nominal_observation):
         trained_shape = trained_handler._tensor_dataset.tensors[1].shape[1:]
-        x_tensor = torch.tensor([nominal_observation])
+        x_tensor = nominal_observation.unsqueeze(0)
         assert x_tensor.shape[1:] == trained_shape
 
 
@@ -287,11 +290,16 @@ class TestInferenceHandlerCheckpoints:
 
         loaded = InferenceHandler(prior_save)
         loaded.create_posterior(posterior_config)
+        device = loaded.device_handler.device
         de = loaded.inference._build_neural_net(
-            torch.zeros(2, theta_dim), torch.zeros(2, x_dim)
+            torch.zeros(2, theta_dim, device=device),
+            torch.zeros(2, x_dim, device=device),
         )
-        de.load_state_dict(torch.load(ckpt_path, map_location="cpu", weights_only=True))
-        de.eval()
+
+        de.load_state_dict(
+            torch.load(ckpt_path, map_location=device, weights_only=True)
+        )
+        de.to(device).eval()
         loaded._density_estimator = de
 
         original = (
@@ -314,8 +322,15 @@ class TestInferenceHandlerCheckpoints:
             dropout_probability=posterior_config.dropout_probability,
             num_blocks=posterior_config.num_blocks,
             num_bins=posterior_config.num_bins,
+            device=prior.device_handler.device,
+            z_score_x="structured",
+            z_score_theta="structured",
         )
-        npe = NPE(prior=prior, density_estimator=neural_net)
+        npe = NPE(
+            prior=prior,
+            density_estimator=neural_net,
+            device=prior.device_handler.device,
+        )
         theta_dim = len(prior.prior_data.parameter_names)
         de = npe._build_neural_net(torch.zeros(2, theta_dim), torch.zeros(2, 12))
 
@@ -345,8 +360,15 @@ class TestInferenceHandlerCheckpoints:
             dropout_probability=posterior_config.dropout_probability,
             num_blocks=posterior_config.num_blocks,
             num_bins=posterior_config.num_bins,
+            device=prior.device_handler.device,
+            z_score_x="structured",
+            z_score_theta="structured",
         )
-        npe = NPE(prior=prior, density_estimator=neural_net)
+        npe = NPE(
+            prior=prior,
+            density_estimator=neural_net,
+            device=prior.device_handler.device,
+        )
         theta_dim = len(prior.prior_data.parameter_names)
         de = npe._build_neural_net(torch.zeros(2, theta_dim), torch.zeros(2, 12))
 

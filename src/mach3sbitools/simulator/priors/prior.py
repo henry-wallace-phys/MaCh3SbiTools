@@ -388,8 +388,8 @@ class Prior(torch.distributions.Distribution):
         :param params: Tensor of shape ``(n_samples, n_params)``.
         :returns: Boolean tensor of shape ``(n_samples,)``.
         """
-        lb = self.prior_data.lower_bounds
-        ub = self.prior_data.upper_bounds
+        lb = self.prior_data.lower_bounds.to(params.device)
+        ub = self.prior_data.upper_bounds.to(params.device)
 
         # Standard interval check for all parameters
         in_bounds = (params >= lb) & (params <= ub)
