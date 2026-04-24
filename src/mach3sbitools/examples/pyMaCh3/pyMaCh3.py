@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from yaml import safe_load
 
-from .helpers import process_parameter_yamls
+from .helpers import process_parameters
 
 try:
     import pyMaCh3_tutorial as m3
@@ -11,6 +11,10 @@ try:
     HAS_PYMACH3 = True
 except ImportError:
     HAS_PYMACH3 = False
+
+from mach3sbitools.utils.logger import get_logger
+
+logger = get_logger()
 
 
 class pyMaCh3Simulator:
@@ -33,29 +37,42 @@ class pyMaCh3Simulator:
             yaml_cfg = safe_load(f)
 
         # We assume a single parameter config is used
-        systematic_configs, additional_fixed, tune = self._get_parameter_config(
-            yaml_cfg
-        )
+        systematics_opts = yaml_cfg.get("General", {}).get("Systematics", {})
+
+        systematic_configs = systematics_opts.get("XsecCovFile", [])
+
         self.parameter_handler = m3.parameters.ParameterHandlerGeneric(
             [str(s) for s in systematic_configs]
         )
 
         # We'll use this in a minute! (contains everything about or systematic model!)
-        self.parameter_properties = process_parameter_yamls(
-            systematic_configs, additional_fixed, tune
+        self.parameter_properties = process_parameters(self.parameter_handler)
+
+        # We also need to get additional fixed pars from the config
+        additional_fixed_names = systematics_opts.get("XsecFix", [])
+        additional_fixed_mask = np.array(
+            [n in additional_fixed_names for n in self.parameter_properties.names]
         )
 
         # We'll use this a lot
-        self._fix_mask = ~self.parameter_properties.fixed
-        self.n_params = len(self.parameter_properties[self._fix_mask])
+        self._fixed_mask = self.parameter_properties.fixed | additional_fixed_mask
+        self.n_params = len(self.parameter_properties[~self._fixed_mask])
+
+        logger.info(f"Fixing {self.parameter_properties[self._fixed_mask]}")
 
         # Saves doing this every time!
-        self._parameter_properties_masked = self.parameter_properties[self._fix_mask]
+        self._parameter_properties_masked = self.parameter_properties[~self._fixed_mask]
 
         # Now we load in the samples
         self.samples = self._get_sample_handlers(yaml_cfg, self.parameter_handler)
 
-        self._data = np.concatenate([s.get_data_hist(0)[0] for s in self.samples])
+        self._data = np.concatenate(
+            [
+                s.get_data_array(i)
+                for s in self.samples
+                for i in range(s.get_n_samples())
+            ]
+        )
         # Another helper
         self.n_bins = len(self._data)
 
@@ -69,10 +86,8 @@ class pyMaCh3Simulator:
         :return: Simulated data
         """
         self._set_parameter_values(theta)
-        return np.fromiter(
-            (b for s in self.samples for b in s.get_mc_hist(0)[0]),
-            dtype=float,
-            count=self.n_bins,
+        return np.concatenate(
+            [s.get_mc_array(i) for s in self.samples for i in range(s.get_n_samples())]
         )
 
     def get_parameter_names(self):
@@ -112,22 +127,6 @@ class pyMaCh3Simulator:
     # -----------------
     # Helpers
     # -----------------
-    @classmethod
-    def _get_parameter_config(cls, yaml_cfg: dict) -> tuple[list[Path], list[str], str]:
-        """
-        Gets the parameter config details from the main YAML cfg
-        :param yaml_cfg: Main yaml config
-        :return:
-        """
-        systematics = yaml_cfg.get("General", {}).get("Systematics")
-        if systematics is None:
-            raise ValueError("Systematics is required in fitter config")
-
-        systematic_configs = [Path(c) for c in systematics["XsecCovFile"]]
-        additional_fixed: list[str] = systematics.get("XsecFix", [])
-        tune: str = systematics.get("XsecTune", "Generated")
-
-        return systematic_configs, additional_fixed, tune
 
     @classmethod
     def _get_sample_handlers(
@@ -163,7 +162,7 @@ class pyMaCh3Simulator:
         # Make a copy (little expensive)
         set_values = self.parameter_properties.nominals.copy()
         # Set non-fixed values
-        set_values[self._fix_mask] = theta
+        set_values[~self._fixed_mask] = theta
 
         self.parameter_handler.set_parameters(set_values)
 

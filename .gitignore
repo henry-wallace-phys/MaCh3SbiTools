@@ -38,4 +38,4 @@ tutorial/my_simulator/my_simulator.py
 
 *jupyter_tutorial*
 *tensor-logs*
-lightning_logs/*
+**/lightning_logs/*

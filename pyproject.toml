@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "3.2.0"
+version = "3.2.1"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -52,7 +52,7 @@ markers = [
 # We really don't need these in testing as it complains
 # about the tiny test models!
 filterwarnings = [
-    "ignore::UserWarning:lightning.pytorch"
+    "ignore::UserWarning:lightning.*",
 ]
 
 [tool.coverage.run]

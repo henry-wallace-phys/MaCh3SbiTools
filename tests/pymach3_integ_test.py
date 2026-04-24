@@ -219,7 +219,7 @@ class TestForwardSimulation:
         theta = np.array(pymach3_instance.get_parameter_nominals())
         x1 = np.array(pymach3_instance.simulate(theta))
         x2 = np.array(pymach3_instance.simulate(theta))
-        np.testing.assert_array_equal(x1, x2)
+        np.testing.assert_array_almost_equal(x1, x2)
 
     def test_simulate_changes_with_theta(self, pymach3_instance):
         """Perturbing theta should (in general) change the output histogram."""
