@@ -154,7 +154,7 @@ class SBILightningModule(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.config.learning_rate
+            self.model.parameters(), lr=self.config.learning_rate, weight_decay=1e-5
         )
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

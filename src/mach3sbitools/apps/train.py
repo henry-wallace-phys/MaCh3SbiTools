@@ -85,6 +85,9 @@ def train_module(
         ema_alpha=ema_alpha,
     )
 
+    if resume_checkpoint:
+        get_logger().info(f"Resuming from {resume_checkpoint}")
+
     inference_handler = InferenceHandler(Path(prior_path), nuisance_pars)
     inference_handler.set_dataset(Path(dataset))
     inference_handler.load_training_data()

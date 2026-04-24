@@ -11,6 +11,7 @@ def simulate_module(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
     prior_file: Path | None,
 ) -> None:
     """Draw samples from the prior and run the simulator for each.
@@ -32,6 +33,7 @@ def simulate_module(
         config,
         nuisance_pars=nuisance_pars,
         cyclical_pars=cyclical_pars,
+        flipped_pars=flipped_pars,
     )
     x, theta = simulator.simulate(n_simulations)
     simulator.save(

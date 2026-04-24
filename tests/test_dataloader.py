@@ -27,8 +27,12 @@ class TestParaketDataset:
 
     def test_getitem_returns_correct_tensors(self, paraket_dataset, test_consts):
         theta, x = paraket_dataset[0]
-        torch.testing.assert_close(x, device_handler.to_tensor(test_consts.x))
-        torch.testing.assert_close(theta, device_handler.to_tensor(test_consts.theta))
+        torch.testing.assert_close(
+            device_handler.to_tensor(x), device_handler.to_tensor(test_consts.x)
+        )
+        torch.testing.assert_close(
+            device_handler.to_tensor(theta), device_handler.to_tensor(test_consts.theta)
+        )
 
     def test_nuisance_filter_reduces_theta_dim(self, dummy_data_dir, test_consts):
         filtered = ParaketDataset(

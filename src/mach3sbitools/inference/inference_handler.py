@@ -34,6 +34,7 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import TensorBoardLogger
 from sbi.inference import NPE, DirectPosterior
+from sbi.inference.posteriors.posterior_parameters import DirectPosteriorParameters
 from sbi.neural_nets import posterior_nn
 from torch.utils.data import TensorDataset
 
@@ -48,6 +49,8 @@ from mach3sbitools.utils.logger import get_logger
 
 logger = get_logger()
 torch.set_float32_matmul_precision("medium")
+
+torch.serialization.add_safe_globals([TrainingConfig, PosteriorConfig])
 
 
 def _select_accelerator_and_strategy():
@@ -84,12 +87,14 @@ class InferenceHandler:
         self.device_handler = TorchDeviceHandler()
 
         self.prior = load_prior(prior_path)
+
+        self.prior = self.prior.to(self.device_handler.device)
         self.parameter_names = self.prior.prior_data.parameter_names
         self.nuisance_pars = nuisance_pars
 
-        if len(self.parameter_names[self.prior._nuisance_filter]) != len(
-            self.prior.prior_data.parameter_names
-        ):
+        if len(
+            self.prior.prior_data[self.prior._nuisance_filter].parameter_names
+        ) != len(self.prior.prior_data.parameter_names):
             raise ValueError(
                 "Prior must have same nuisance params as inference handler!"
             )
@@ -140,13 +145,26 @@ class InferenceHandler:
         :param config: Architecture and hyperparameter settings. See
             :class:`~mach3sbitools.utils.PosteriorConfig`.
         """
+
+        # embedding_net = embedding_nets.FCEmbedding(
+        #     input_dim=self.prior.n_params,
+        #     output_dim=93,
+        #     num_layers=20,
+        #     num_hiddens=50,
+        #     enable_layer_norm=True,
+        # )
+
         neural_net = posterior_nn(
             model=config.model,
+            # embedding_net=embedding_net,
             hidden_features=config.hidden_features,
             num_transforms=config.num_transforms,
             dropout_probability=config.dropout_probability,
             num_blocks=config.num_blocks,
             num_bins=config.num_bins,
+            z_score_x="structured",
+            z_score_theta="structured",
+            device=self.device_handler.device,
         )
         self.inference = NPE(
             prior=self.prior,
@@ -224,24 +242,28 @@ class InferenceHandler:
         lightning_module = SBILightningModule(density_estimator, config, model_config)
         data_module = SBIDataModule(self._tensor_dataset, config)
 
+        # Model checkpoint needs some overriding to save properly
+        model_checkpoint = ModelCheckpoint(
+            dirpath=(config.save_path.parent if config.save_path else None),
+            filename=f"{config.save_path.stem if config.save_path else ''}"
+            + "{epoch}-{ema_val_loss:.4f}",
+            monitor="ema_val_loss",
+            save_top_k=3,
+            every_n_epochs=config.autosave_every,
+            save_last=True,
+        )
+
+        model_checkpoint.CHECKPOINT_NAME_LAST = (
+            str(config.save_path.stem) if config.save_path else "last"
+        )
+
         callbacks = [
             EarlyStopping(
                 monitor="ema_val_loss",
                 patience=config.stop_after_epochs,
                 mode="min",
             ),
-            ModelCheckpoint(
-                dirpath=(
-                    config.save_path.parent / "checkpoints"
-                    if config.save_path
-                    else None
-                ),
-                filename="{epoch}-{ema_val_loss:.4f}",
-                monitor="ema_val_loss",
-                save_top_k=3,
-                every_n_epochs=config.autosave_every,
-                save_last=True,
-            ),
+            model_checkpoint,
             LearningRateMonitor(logging_interval="epoch"),
         ]
 
@@ -258,7 +280,7 @@ class InferenceHandler:
             callbacks=callbacks,
             logger=tb_logger,
             precision="bf16-mixed" if config.use_amp else "32-true",
-            gradient_clip_val=5.0,
+            gradient_clip_val=1.0,
             enable_progress_bar=config.show_progress,
             log_every_n_steps=50,
             strategy=strat,
@@ -274,9 +296,8 @@ class InferenceHandler:
                 str(config.resume_checkpoint) if config.resume_checkpoint else None
             ),
         )
-
         self._density_estimator = lightning_module.model
-        self._density_estimator.eval()
+        self._density_estimator.to(self.device_handler.device).eval()
         if config.save_path is None:
             raise FileNotFoundError("No checkpoint provided.")
 
@@ -297,7 +318,11 @@ class InferenceHandler:
         if self.inference is None:
             raise ValueError("Call create_posterior() before build_posterior().")
 
-        self.posterior = self.inference.build_posterior(self._density_estimator)
+        pars = DirectPosteriorParameters(enable_transform=False)
+
+        self.posterior = self.inference.build_posterior(
+            self._density_estimator, posterior_parameters=pars
+        )
 
     def sample_posterior(
         self,
@@ -321,9 +346,7 @@ class InferenceHandler:
         if self.posterior is None:
             raise ValueError("Train or load a density estimator first.")
 
-        x_tensor = torch.tensor(
-            np.array([x]), dtype=torch.float32, device=self.device_handler.device
-        )
+        x_tensor = self.device_handler.to_tensor(x).to(self.prior.device_handler.device)
         return cast(
             torch.Tensor, self.posterior.sample((num_samples,), x=x_tensor, **kwargs)
         )
@@ -399,31 +422,43 @@ class InferenceHandler:
         self.create_posterior(config)
 
         try:
-            x_dim = state_dict["net._embedding_net.0._mean"].shape[0]
-            theta_dim = next(
-                v.shape[1]
-                for k, v in state_dict.items()
-                if "autoregressive_net.initial_layer.weight" in k
-            )
-        except (KeyError, StopIteration) as exc:
+            # 1. Attempt to get x_dim from the standardizer (works for "independent")
+            mean_shape = state_dict["net._embedding_net.0._mean"].shape
+            if len(mean_shape) > 0:
+                x_dim = mean_shape[0]
+            else:
+                # 2. Fallback for "structured" (scalar): Find the first weight matrix that processes x
+                # This catches either a custom embedding net OR the default flow context layer
+                x_dim_keys = [
+                    k
+                    for k in state_dict.keys()
+                    if "context_layer.weight" in k
+                    or ("_embedding_net" in k and "weight" in k)
+                ]
+                x_dim = state_dict[x_dim_keys[0]].shape[1]
+
+            # 3. Get theta_dim safely directly from your loaded prior!
+            theta_dim = len(self.parameter_names)
+
+        except (KeyError, IndexError) as exc:
             raise ValueError(
                 "Could not infer theta/x dimensions from checkpoint state dict. "
                 "The checkpoint may be corrupt or from an incompatible sbi version."
             ) from exc
-
         logger.debug(f"Inferred from checkpoint: theta_dim={theta_dim}, x_dim={x_dim}")
 
         if self.inference is None:
             raise ValueError("Cannot find inference.")
 
+        device = self.device_handler.device
         density_estimator = self.inference._build_neural_net(
-            torch.zeros(2, theta_dim),
-            torch.zeros(2, x_dim),
+            torch.zeros(2, theta_dim, device=device),
+            torch.zeros(2, x_dim, device=device),
         )
         density_estimator.load_state_dict(state_dict)
-        density_estimator.to(self.device_handler.device).eval()
+        print(density_estimator)
+        density_estimator.to(device).eval()
         self._density_estimator = density_estimator
-
         logger.info(f"Density estimator loaded from [cyan]{checkpoint_path}[/]")
 
     def get_log_likelihood(

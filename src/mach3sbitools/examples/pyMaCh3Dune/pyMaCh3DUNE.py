@@ -9,21 +9,21 @@ from yaml import safe_load
 from .helpers import process_parameters
 
 try:
-    import pyMaCh3_tutorial as m3
+    from pyMaCh3_DUNE import parameters, samples
 
     HAS_PYMACH3 = True
 except ImportError:
     HAS_PYMACH3 = False
 
 if TYPE_CHECKING:
-    import pyMaCh3_tutorial as m3
+    from pyMaCh3_DUNE import parameters, samples
 
 from mach3sbitools.utils.logger import get_logger
 
 logger = get_logger()
 
 
-class pyMaCh3Simulator:
+class pyMaCh3DUNESimulator:
     def __init__(self, fitter_config: Path):
         """
         PyMaCh3 simulator object, a helper function around the MaCh3 simulator implementation
@@ -31,7 +31,7 @@ class pyMaCh3Simulator:
         """
         if not HAS_PYMACH3:
             raise ImportError(
-                "Trying to instantiate pyMaCh3Simulator without a pyMaCh3 install!"
+                "Trying to instantiate pyMaCh3DUNESimulator without a pyMaCh3_DUNE install!"
             )
 
         # Read in MaCh3 Config
@@ -47,7 +47,7 @@ class pyMaCh3Simulator:
 
         systematic_configs = systematics_opts.get("XsecCovFile", [])
 
-        self.parameter_handler = m3.parameters.ParameterHandlerGeneric(
+        self.parameter_handler = parameters.ParameterHandlerGeneric(
             [str(s) for s in systematic_configs]
         )
 
@@ -138,20 +138,20 @@ class pyMaCh3Simulator:
     def _get_sample_handlers(
         cls,
         yaml_cfg: dict,
-        parameter_handler: m3.parameters.ParameterHandlerGeneric,
-    ) -> list[m3.samples.SampleHandlerTutorial]:
+        parameter_handler: parameters.ParameterHandlerGeneric,
+    ) -> list[samples.SampleHandlerBase]:
         """
         Load in the samples from the MaCh3 fitter config
         :param yaml_cfg: Main config
         :param parameter_handler: A list of fitter configs
         :return:
         """
-        samples = yaml_cfg.get("General", {}).get("TutorialSamples")
-        if samples is None:
-            raise ValueError("TutorialSamples is required in fitter config")
+        sample_files = yaml_cfg.get("General", {}).get("DUNESamples")
+        if sample_files is None:
+            raise ValueError("DUNESamples is required in fitter config")
 
         return [
-            m3.samples.SampleHandlerTutorial(str(s), parameter_handler) for s in samples
+            samples.SampleHandlerBeamFD(str(s), parameter_handler) for s in sample_files
         ]
 
     def _set_parameter_values(self, theta: list[float] | np.ndarray):

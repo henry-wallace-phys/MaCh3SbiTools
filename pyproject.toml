@@ -1,6 +1,6 @@
 [project]
 name = "mach3sbitools"
-version = "3.2.1"
+version = "3.2.2"
 description = "Specific SBI package for handling MaCh3 Chains"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -77,7 +77,6 @@ ignore = [
 allowed-confusables = ["σ", "α"] # We need sigmas
 
 [tool.mypy]
-python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true

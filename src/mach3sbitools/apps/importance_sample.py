@@ -22,6 +22,7 @@ def importance_sample_module(
     posterior: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
 ):
     logger = get_logger()
     logger.info("Perform importance sampling")
@@ -34,6 +35,7 @@ def importance_sample_module(
         config,
         nuisance_pars=nuisance_pars,
         cyclical_pars=cyclical_pars,
+        flipped_pars=flipped_pars,
     )
 
     prior_path = Path("/tmp/prior.pkl")

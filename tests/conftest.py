@@ -100,8 +100,8 @@ def prior_save(prior, tmp_path_factory) -> Path:
 def posterior_config():
     return PosteriorConfig(
         model="maf",
-        hidden_features=32,
-        num_transforms=5,
+        hidden_features=5,
+        num_transforms=2,
         dropout_probability=0,
         num_blocks=2,
         num_bins=10,

@@ -10,6 +10,7 @@ def save_data_module(
     output_file: Path,
     nuisance_pars: list[str],
     cyclical_pars: list[str],
+    flipped_pars: list[str],
 ) -> None:
     """Extract and save the observed data bins from the simulator.
 
@@ -29,5 +30,6 @@ def save_data_module(
         Path(config),
         nuisance_pars=nuisance_pars,
         cyclical_pars=cyclical_pars,
+        flipped_pars=flipped_pars,
     )
     simulator.save_data(Path(output_file))

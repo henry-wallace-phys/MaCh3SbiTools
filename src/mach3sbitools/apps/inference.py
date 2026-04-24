@@ -18,7 +18,7 @@ def inference(
     observed_data_file: Path,
     nuisance_pars: list[str],
 ) -> None:
-    """Sample the posterior distribution conditioned on observed data.
+    """Sample the posterior distribution conditioned on observed data.x
 
     Loads a trained density estimator checkpoint, reads the model architecture
     directly from it (no ``--model`` / ``--hidden`` / etc. flags required),
