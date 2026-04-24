@@ -61,144 +61,76 @@ def _select_accelerator_and_strategy():
     return "cpu", "auto"
 
 
-def _infer_dims_from_state_dict(state_dict: dict) -> tuple[int, int]:
+def _infer_x_dim_from_state_dict(state_dict: dict) -> int | None:
     """
-    Infer (theta_dim, x_dim) from a density-estimator state dict.
+    Infer the observable dimension (x_dim) from a density-estimator state dict.
 
-    The structured z-score layers are the most reliable source because they
-    are always present regardless of flow architecture (NSF, MAF, …):
+    Strategy (in order of preference):
 
-    * ``net._embedding_net.0._mean``  shape ``[x_dim]``
-    * ``net._transform._transforms.0._shift``  shape ``[theta_dim]``
+    1. ``net._embedding_net.0._mean`` — the fitted z-score buffer has shape
+       ``[x_dim]`` after training, but is a scalar ``[]`` in a freshly built
+       checkpoint.  We only use it when it has been sized.
 
-    Falls back to a broad key scan so that checkpoints from unusual
-    architectures still work when the canonical keys are absent.
+    2. First Linear weight whose key contains an embedding/context substring.
+       A Linear weight has shape ``[out_features, in_features]``; the very
+       first such layer receives x directly, so ``in_features == x_dim``.
 
-    :raises ValueError: If dimensions cannot be determined.
+    3. MAF/NSF-specific context keys (``made.context_layer``, etc.).
+
+    :returns: Inferred x_dim, or ``None`` if it cannot be determined.
     """
-    # ── x_dim ────────────────────────────────────────────────────────────────
-    x_dim: int | None = None
-    if "net._embedding_net.0._mean" in state_dict:
-        shape = state_dict["net._embedding_net.0._mean"].shape
-        if shape:  # guard against scalar [] buffers (un-fitted model)
-            x_dim = shape[0]
+    # 1. Fitted z-score buffer (present and sized only after training).
+    mean_key = "net._embedding_net.0._mean"
+    if mean_key in state_dict:
+        shape = state_dict[mean_key].shape
+        if len(shape) == 1:
+            return int(shape[0])
 
-    # ── theta_dim ─────────────────────────────────────────────────────────────
-    theta_dim: int | None = None
-    if "net._transform._transforms.0._shift" in state_dict:
-        shape = state_dict["net._transform._transforms.0._shift"].shape
-        if shape:
-            theta_dim = shape[0]
+    # 2. First Linear weight in an embedding / context sub-module.
+    embedding_substrings = ("_embedding_net", "context_net", "context_layer")
+    for key, val in state_dict.items():
+        if val.ndim != 2 or not key.endswith(".weight"):
+            continue
+        if any(s in key for s in embedding_substrings):
+            return int(val.shape[1])  # in_features of the first projection
 
-    # ── fallback: scan all keys for weight matrices ───────────────────────────
-    # Different flow families (MAF / NSF / …) use different submodule names.
-    # Rather than enumerate them all we look at every 2-D weight tensor and
-    # use heuristic names to decide which end is theta vs x.
-    if theta_dim is None or x_dim is None:
-        for key, val in state_dict.items():
-            if val.ndim != 2:
-                continue
-            if theta_dim is None and any(
-                s in key
-                for s in (
-                    "autoregressive_net.initial_layer.weight",
-                    "conditioner.weight",  # NSF conditioner
-                    "spline_net.0.weight",  # some NSF variants
-                )
-            ):
-                theta_dim = val.shape[1]
-            if x_dim is None and any(
-                s in key
-                for s in (
-                    "_embedding_net",
-                    "context_net",
-                    "embedding_net",
-                )
-            ):
-                x_dim = val.shape[1]
-            if theta_dim is not None and x_dim is not None:
-                break
+    # 3. MAF / NSF conditioner context keys (no explicit embedding net).
+    conditioner_substrings = (
+        "made.context_layer",
+        "context_encoder",
+        "_transforms.0._transform",
+    )
+    for key, val in state_dict.items():
+        if val.ndim != 2 or not key.endswith(".weight"):
+            continue
+        if any(s in key for s in conditioner_substrings):
+            return int(val.shape[1])
 
-    if theta_dim is None or x_dim is None:
-        missing = []
-        if theta_dim is None:
-            missing.append("theta_dim")
-        if x_dim is None:
-            missing.append("x_dim")
-        raise ValueError(
-            f"Could not infer {' or '.join(missing)} from checkpoint state dict. "
-            "The checkpoint may be corrupt or from an incompatible sbi version. "
-            f"Available keys: {list(state_dict.keys())[:20]}"
-        )
-
-    return theta_dim, x_dim
+    return None
 
 
-def _build_and_prime_density_estimator(
+def _build_neural_net_with_correct_shapes(
     inference: NPE,
     theta_dim: int,
     x_dim: int,
 ) -> nn.Module:
     """
-    Build and fully prime a density estimator so its z-score buffers are
-    correctly shaped before ``load_state_dict`` is called.
+    Build a density estimator with correctly sized z-score buffers.
 
-    sbi's ``Standardize`` layers (both in the embedding net and in the flow
-    transform) are initialised as shape-``[]`` scalar buffers.  They are
-    re-shaped the first time ``_build_neural_net`` is called with real-shaped
-    tensors *and* the network is run forward.  We therefore build the net with
-    dummy tensors of the right shape and then run a forward pass through each
-    normalisation layer explicitly.
+    sbi's ``Standardize`` layers start as shape-``[]`` scalar buffers.
+    ``NPE._build_neural_net`` sizes them from the column counts of the dummy
+    tensors passed to it, so we must use the actual dimensions.
 
-    :param inference: A freshly created :class:`sbi.inference.NPE` object
-        whose ``_build_neural_net`` has not yet been called.
+    :param inference: A freshly created :class:`sbi.inference.NPE` whose
+        ``_build_neural_net`` has not yet been called.
     :param theta_dim: Number of parameters (theta columns).
     :param x_dim: Number of observables (x columns).
-    :returns: The density estimator with correctly shaped buffers, in eval
-        mode on CPU.
+    :returns: Density estimator in eval mode with correctly shaped buffers.
     """
     dummy_theta = torch.zeros(2, theta_dim)
     dummy_x = torch.zeros(2, x_dim)
-
-    # _build_neural_net calls append_simulations internally, which sets the
-    # buffer shapes from the shapes of dummy_theta and dummy_x.
     density_estimator = inference._build_neural_net(dummy_theta, dummy_x)
     density_estimator.eval()
-
-    with torch.no_grad():
-        net = getattr(density_estimator, "net", None)
-        if net is None:
-            return density_estimator
-
-        # Prime the embedding-net z-score layer (shapes x_dim buffers).
-        embedding_net = getattr(net, "_embedding_net", None)
-        if embedding_net is not None:
-            try:
-                embedding_net(dummy_x)
-            except Exception:
-                # Some embedding nets are identity / don't accept plain input;
-                # _build_neural_net will have already sized the buffers.
-                pass
-
-        # Prime the flow z-score layer (shapes theta_dim buffers).
-        # We cannot call density_estimator.forward() because NFlowsFlow
-        # requires (theta, x) and performs the full expensive transform, but
-        # we only need the first standardisation layer to run.
-        transform = getattr(net, "_transform", None)
-        if transform is not None:
-            transforms = getattr(transform, "_transforms", [])
-            if transforms:
-                first = transforms[0]
-                # Standardize.forward(theta) is safe to call directly.
-                if hasattr(first, "_shift") and first._shift.shape:
-                    # Already sized — nothing to do.
-                    pass
-                elif callable(first):
-                    try:
-                        first(dummy_theta)
-                    except Exception:
-                        pass
-
     return density_estimator
 
 
@@ -501,23 +433,26 @@ class InferenceHandler:
         ``"model_config"`` keys) and plain state dicts (legacy format that
         requires ``posterior_config`` to be supplied explicitly).
 
-        The model dimensions (``theta_dim``, ``x_dim``) are always inferred
-        directly from the checkpoint's state dict, never from the config.
-        This guarantees that the z-score buffers (``_shift`` / ``_scale`` /
-        ``_mean`` / ``_std``) are sized correctly before ``load_state_dict``
-        is called, avoiding shape-mismatch ``RuntimeError``s.
+        **How dimensions are resolved**
 
-        :param checkpoint_path: Path to a ``.pt`` / ``.ckpt`` checkpoint
-            file.
+        ``theta_dim`` is always taken from ``self.prior.n_params`` — the
+        prior is the ground truth and its value is always available.  The
+        checkpoint's theta z-score buffer (``_shift`` / ``_scale``) starts as
+        a scalar ``[]`` in freshly built (untrained) checkpoints, so it cannot
+        be used reliably.
+
+        ``x_dim`` is read from the checkpoint state dict by inspecting the
+        fitted z-score buffer or, as a fallback, the first embedding/context
+        weight matrix.
+
+        :param checkpoint_path: Path to a ``.pt`` / ``.ckpt`` checkpoint file.
         :param posterior_config: Ignored when the checkpoint contains a
-            ``"model_config"`` entry (i.e. any checkpoint produced by a
-            current trainer). Required for legacy plain state-dict
+            ``"model_config"`` entry. Required for legacy plain state-dict
             checkpoints that pre-date self-contained saves.
         :raises FileNotFoundError: If *checkpoint_path* does not exist.
         :raises ValueError: If no model config can be found in the checkpoint
             and none was supplied.
-        :raises ValueError: If dimensions cannot be inferred from the state
-            dict.
+        :raises ValueError: If ``x_dim`` cannot be inferred from the state dict.
         """
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
@@ -525,7 +460,7 @@ class InferenceHandler:
 
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
-        # ── Unpack state dict and config from the checkpoint ──────────────────
+        # ── Unpack state dict and config ──────────────────────────────────────
         if isinstance(ckpt, dict) and "model_state" in ckpt:
             state_dict = ckpt["model_state"]
             logger.info(f"Loading autosave checkpoint from epoch {ckpt.get('epoch')}")
@@ -565,27 +500,42 @@ class InferenceHandler:
             }
             logger.debug("Stripped _orig_mod. prefix from compiled model state dict")
 
-        # ── Infer dimensions from the checkpoint itself ───────────────────────
-        # We read theta_dim and x_dim from the state dict rather than from the
-        # config so that the z-score buffers are always sized to match the
-        # weights that are about to be loaded, regardless of what the config
-        # says.
-        theta_dim, x_dim = _infer_dims_from_state_dict(state_dict)
-        logger.debug(f"Inferred from checkpoint: theta_dim={theta_dim}, x_dim={x_dim}")
+        # ── Resolve dimensions ────────────────────────────────────────────────
+        #
+        # theta_dim — always from the prior, never from the checkpoint.
+        # The checkpoint's theta z-score buffer (_shift/_scale) is a scalar []
+        # in freshly built checkpoints (i.e. built via _build_neural_net but
+        # never trained), which is exactly the format used in the test fixtures.
+        # The prior is always present and always correct.
+        #
+        # x_dim — from the state dict, preferring the fitted z-score buffer and
+        # falling back to weight-matrix inspection.
+        theta_dim: int = self.prior.n_params
 
-        # ── Rebuild the network with correctly shaped buffers ─────────────────
-        # create_posterior() constructs a fresh NPE object (self.inference).
-        # _build_and_prime_density_estimator() then calls
-        # inference._build_neural_net() with real-shaped dummy tensors so that
-        # sbi's Standardize layers allocate 1-D buffers of the right length,
-        # and then runs the normalisation layers forward once to ensure the
-        # buffers are not still scalar [] tensors.
+        x_dim: int | None = _infer_x_dim_from_state_dict(state_dict)
+        if x_dim is None:
+            raise ValueError(
+                "Could not infer x_dim from the checkpoint state dict. "
+                "The checkpoint may be from an incompatible sbi version. "
+                f"Available state dict keys: {list(state_dict.keys())[:30]}"
+            )
+
+        logger.debug(
+            f"Resolved dims — theta_dim={theta_dim} (from prior), "
+            f"x_dim={x_dim} (from checkpoint)"
+        )
+
+        # ── Rebuild the network with correctly sized buffers ──────────────────
+        # create_posterior() builds a fresh NPE (self.inference).
+        # _build_neural_net() with real-shaped dummy tensors causes sbi's
+        # Standardize layers to allocate 1-D buffers of the correct length,
+        # so the subsequent load_state_dict() call finds matching shapes.
         self.create_posterior(config)
 
         if self.inference is None:
             raise ValueError("create_posterior() did not initialise self.inference.")
 
-        density_estimator = _build_and_prime_density_estimator(
+        density_estimator = _build_neural_net_with_correct_shapes(
             self.inference, theta_dim, x_dim
         )
 
