@@ -34,6 +34,7 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import TensorBoardLogger
 from sbi.inference import NPE, DirectPosterior
+from sbi.inference.posteriors.posterior_parameters import DirectPosteriorParameters
 from sbi.neural_nets import posterior_nn
 from torch.utils.data import TensorDataset
 
@@ -142,13 +143,25 @@ class InferenceHandler:
         :param config: Architecture and hyperparameter settings. See
             :class:`~mach3sbitools.utils.PosteriorConfig`.
         """
+
+        # embedding_net = embedding_nets.FCEmbedding(
+        #     input_dim=self.prior.n_params,
+        #     output_dim=93,
+        #     num_layers=20,
+        #     num_hiddens=50,
+        #     enable_layer_norm=True,
+        # )
+
         neural_net = posterior_nn(
             model=config.model,
+            # embedding_net=embedding_net,
             hidden_features=config.hidden_features,
             num_transforms=config.num_transforms,
             dropout_probability=config.dropout_probability,
             num_blocks=config.num_blocks,
             num_bins=config.num_bins,
+            z_score_x="structured",
+            z_score_theta="structured",
         )
         self.inference = NPE(
             prior=self.prior,
@@ -264,7 +277,7 @@ class InferenceHandler:
             callbacks=callbacks,
             logger=tb_logger,
             precision="bf16-mixed" if config.use_amp else "32-true",
-            gradient_clip_val=5.0,
+            gradient_clip_val=1.0,
             enable_progress_bar=config.show_progress,
             log_every_n_steps=50,
             strategy=strat,
@@ -303,7 +316,11 @@ class InferenceHandler:
         if self.inference is None:
             raise ValueError("Call create_posterior() before build_posterior().")
 
-        self.posterior = self.inference.build_posterior(self._density_estimator)
+        pars = DirectPosteriorParameters(enable_transform=False)
+
+        self.posterior = self.inference.build_posterior(
+            self._density_estimator, posterior_parameters=pars
+        )
 
     def sample_posterior(
         self,

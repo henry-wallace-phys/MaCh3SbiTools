@@ -41,6 +41,7 @@ def diagnostics_module(
     inference_handler = InferenceHandler(prior_path, nuisance_pars)
     inference_handler.load_posterior(Path(posterior), posterior_config=None)
 
+    output_file = Path(output_file)
     output_file.mkdir(parents=True, exist_ok=True)
 
     if make_logl_comp:

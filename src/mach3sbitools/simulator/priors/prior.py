@@ -23,7 +23,7 @@ from typing import TypeAlias
 
 import numpy as np
 import torch
-from torch.distributions import MultivariateNormal, Uniform, constraints
+from torch.distributions import Uniform, constraints
 
 from mach3sbitools.utils import TorchDeviceHandler, get_logger
 
@@ -31,6 +31,7 @@ from ..simulator_injector import SimulatorProtocol
 from .cyclical_distribution import CyclicalDistribution
 from .dataclasses import PriorData
 from .flipped_uniform_distribution import FlippedUniformDistribution
+from .truncated_gaussian_distribution import TruncatedGaussianDistribution
 
 size_: TypeAlias = torch.Size | list[int] | tuple[int, ...]
 
@@ -281,37 +282,13 @@ class Prior(torch.distributions.Distribution):
 
     def _get_gaussian_map(self, gaussian_mask: torch.Tensor) -> MaskDistributionMap:
         gaussian_data = self.prior_data[gaussian_mask]
-
-        cov = gaussian_data.covariance_matrix
-        # Symmetrize to correct floating point asymmetry
-        cov = (cov + cov.transpose(-1, -2)) / 2
-
-        # Attempt Cholesky; if it fails, apply jitter until it succeeds
-        jitter = 1e-6
-        max_attempts = 6
-        for attempt in range(max_attempts):
-            try:
-                torch.linalg.cholesky(cov)
-                break
-            except torch.linalg.LinAlgError:
-                get_logger().warning(
-                    f"Covariance matrix not positive definite (attempt {attempt + 1}); "
-                    f"adding jitter {jitter}"
-                )
-                eye = torch.eye(cov.shape[-1], dtype=cov.dtype, device=cov.device)
-                cov = cov + jitter * eye
-                jitter *= 10
-        else:
-            raise ValueError(
-                f"Covariance matrix could not be made positive definite after "
-                f"{max_attempts} attempts. Last jitter: {jitter / 10}"
-            )
-
-        get_logger().info("Decomposed matrix")
-        gaussian_dist = MultivariateNormal(
-            gaussian_data.nominals, covariance_matrix=cov
+        dist = TruncatedGaussianDistribution(
+            mean=gaussian_data.nominals,
+            covariance=gaussian_data.covariance_matrix,
+            lower_bounds=gaussian_data.lower_bounds,
+            upper_bounds=gaussian_data.upper_bounds,
         )
-        return MaskDistributionMap(gaussian_mask, gaussian_dist)
+        return MaskDistributionMap(gaussian_mask, dist)
 
     # ── Properties ─────────────────────────────────────────────────────────────
 
@@ -360,11 +337,14 @@ class Prior(torch.distributions.Distribution):
         """
         Draw samples from the composite prior.
 
-        Gaussian components are rejection-sampled within their bounds.
+        Each component delegates to its own distribution's ``sample()``
+        method.  Gaussian parameters use
+        :class:`~mach3sbitools.simulator.priors.truncated_gaussian_distribution.TruncatedGaussianDistribution`
+        which draws exact, rejection-free samples via the inverse-CDF method.
 
-        :param sample_shape: Batch shape.
+        :param sample_shape: Batch shape. Pass ``torch.Size([n])`` for
+            *n* independent samples.
         :returns: Tensor of shape ``(*sample_shape, n_params)``.
-        :raises RuntimeError: If Gaussian rejection sampling does not converge.
         """
         sample_shape = torch.Size(sample_shape)
         samples = torch.empty(
@@ -374,40 +354,10 @@ class Prior(torch.distributions.Distribution):
         )
 
         for mask_map in self._priors:
-            if isinstance(mask_map.distribution, MultivariateNormal):
-                lb = self.prior_data.lower_bounds[mask_map.mask]
-                ub = self.prior_data.upper_bounds[mask_map.mask]
-                n_gauss = int(mask_map.mask.sum())
+            samples[..., mask_map.mask] = mask_map.distribution.sample(sample_shape).to(
+                torch.double
+            )
 
-                out = torch.empty(
-                    (*sample_shape, n_gauss),
-                    dtype=torch.double,
-                    device=self.device_handler.device,
-                )
-
-                # Track which parameters still need valid samples
-                remaining = torch.ones(
-                    (*sample_shape, n_gauss),
-                    dtype=torch.bool,
-                    device=self.device_handler.device,
-                )
-
-                for _ in range(10_000):
-                    if not remaining.any():
-                        break
-                    new = mask_map.distribution.sample(sample_shape).to(torch.double)
-                    in_bounds = (new >= lb) & (
-                        new <= ub
-                    )  # shape: (*sample_shape, n_gauss)
-                    accepted = in_bounds & remaining
-                    out[accepted] = new[accepted]
-                    remaining[accepted] = False
-
-                if remaining.any():
-                    raise RuntimeError(
-                        "Gaussian rejection sampling failed after 100 iterations"
-                    )
-                samples[..., mask_map.mask] = out
         return samples
 
     def rsample(self, sample_shape=torch.Size([])) -> torch.Tensor:
