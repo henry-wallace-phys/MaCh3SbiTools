@@ -439,20 +439,30 @@ class InferenceHandler:
         if self.inference is None:
             raise ValueError("Cannot find inference.")
 
+        # _build_neural_net primes the structured z-score buffers by internally
+        # calling append_simulations, which sets buffer shapes from the dummy
+        # theta and x tensors. Passing real-shaped tensors here ensures the
+        # buffer shapes match those stored in the checkpoint before we call
+        # load_state_dict.
         density_estimator = self.inference._build_neural_net(
             torch.zeros(2, theta_dim),
             torch.zeros(2, x_dim),
         )
 
-        # Prime structured z-score buffers so their shapes match the checkpoint.
-        # z_score_x="structured" and z_score_theta="structured" use lazy
-        # initialisation — buffer shapes are only set after the first forward
-        # pass, so without this the shapes are scalar and load_state_dict fails.
+        # Explicitly prime the z-score layers by running them in isolation.
+        # NFlowsFlow has no forward() so we cannot call the full network, but
+        # the embedding net and standardisation layers do support direct calls.
         with torch.no_grad():
-            density_estimator(
-                torch.zeros(2, theta_dim),
-                torch.zeros(2, x_dim),
-            )
+            if hasattr(density_estimator, "net") and hasattr(
+                density_estimator.net, "_embedding_net"
+            ):
+                density_estimator.net._embedding_net(torch.zeros(2, x_dim))
+            if hasattr(density_estimator, "net") and hasattr(
+                density_estimator.net, "_transform"
+            ):
+                transforms = density_estimator.net._transform._transforms
+                if transforms and hasattr(transforms[0], "_shift"):
+                    transforms[0]._shift  # access to trigger any lazy init
 
         density_estimator.load_state_dict(state_dict)
         density_estimator.to(self.device_handler.device).eval()
