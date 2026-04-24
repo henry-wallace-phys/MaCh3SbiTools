@@ -57,7 +57,7 @@ class MaskDistributionMap:
     mask: torch.Tensor
     distribution: torch.distributions.Distribution
 
-    def to(self, device: torch.device) -> "MaskDistributionMap":
+    def to(self, device: torch.device | str) -> "MaskDistributionMap":
         """
         Move *mask* to *device* (distribution tensors are not moved).
 
@@ -415,7 +415,7 @@ class Prior(torch.distributions.Distribution):
         with output_path.open("wb") as f:
             pickle.dump(self, f)
 
-    def to(self, device: torch.device) -> "Prior":
+    def to(self, device: torch.device | str) -> "Prior":
         """
         Move all tensors to *device* in-place.
 

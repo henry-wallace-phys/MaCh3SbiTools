@@ -87,6 +87,7 @@ class InferenceHandler:
         self.device_handler = TorchDeviceHandler()
 
         self.prior = load_prior(prior_path)
+
         self.prior = self.prior.to(self.device_handler.device)
         self.parameter_names = self.prior.prior_data.parameter_names
         self.nuisance_pars = nuisance_pars
