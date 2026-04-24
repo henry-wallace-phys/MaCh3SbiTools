@@ -34,7 +34,7 @@ jobs:
 
       - name: Clone MaCh3
         env:
-          CMAKE_ARGS: "-DPYTHON_ENABLED=ON -DMaCh3_Branch=feature_python_bindings"
+          CMAKE_ARGS: "-DPYTHON_ENABLED=ON"
         run: |
           cd /opt/
           git clone https://github.com/mach3-software/MaCh3Tutorial.git MaCh3Tutorial
