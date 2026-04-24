@@ -61,6 +61,147 @@ def _select_accelerator_and_strategy():
     return "cpu", "auto"
 
 
+def _infer_dims_from_state_dict(state_dict: dict) -> tuple[int, int]:
+    """
+    Infer (theta_dim, x_dim) from a density-estimator state dict.
+
+    The structured z-score layers are the most reliable source because they
+    are always present regardless of flow architecture (NSF, MAF, …):
+
+    * ``net._embedding_net.0._mean``  shape ``[x_dim]``
+    * ``net._transform._transforms.0._shift``  shape ``[theta_dim]``
+
+    Falls back to a broad key scan so that checkpoints from unusual
+    architectures still work when the canonical keys are absent.
+
+    :raises ValueError: If dimensions cannot be determined.
+    """
+    # ── x_dim ────────────────────────────────────────────────────────────────
+    x_dim: int | None = None
+    if "net._embedding_net.0._mean" in state_dict:
+        shape = state_dict["net._embedding_net.0._mean"].shape
+        if shape:  # guard against scalar [] buffers (un-fitted model)
+            x_dim = shape[0]
+
+    # ── theta_dim ─────────────────────────────────────────────────────────────
+    theta_dim: int | None = None
+    if "net._transform._transforms.0._shift" in state_dict:
+        shape = state_dict["net._transform._transforms.0._shift"].shape
+        if shape:
+            theta_dim = shape[0]
+
+    # ── fallback: scan all keys for weight matrices ───────────────────────────
+    # Different flow families (MAF / NSF / …) use different submodule names.
+    # Rather than enumerate them all we look at every 2-D weight tensor and
+    # use heuristic names to decide which end is theta vs x.
+    if theta_dim is None or x_dim is None:
+        for key, val in state_dict.items():
+            if val.ndim != 2:
+                continue
+            if theta_dim is None and any(
+                s in key
+                for s in (
+                    "autoregressive_net.initial_layer.weight",
+                    "conditioner.weight",  # NSF conditioner
+                    "spline_net.0.weight",  # some NSF variants
+                )
+            ):
+                theta_dim = val.shape[1]
+            if x_dim is None and any(
+                s in key
+                for s in (
+                    "_embedding_net",
+                    "context_net",
+                    "embedding_net",
+                )
+            ):
+                x_dim = val.shape[1]
+            if theta_dim is not None and x_dim is not None:
+                break
+
+    if theta_dim is None or x_dim is None:
+        missing = []
+        if theta_dim is None:
+            missing.append("theta_dim")
+        if x_dim is None:
+            missing.append("x_dim")
+        raise ValueError(
+            f"Could not infer {' or '.join(missing)} from checkpoint state dict. "
+            "The checkpoint may be corrupt or from an incompatible sbi version. "
+            f"Available keys: {list(state_dict.keys())[:20]}"
+        )
+
+    return theta_dim, x_dim
+
+
+def _build_and_prime_density_estimator(
+    inference: NPE,
+    theta_dim: int,
+    x_dim: int,
+) -> nn.Module:
+    """
+    Build and fully prime a density estimator so its z-score buffers are
+    correctly shaped before ``load_state_dict`` is called.
+
+    sbi's ``Standardize`` layers (both in the embedding net and in the flow
+    transform) are initialised as shape-``[]`` scalar buffers.  They are
+    re-shaped the first time ``_build_neural_net`` is called with real-shaped
+    tensors *and* the network is run forward.  We therefore build the net with
+    dummy tensors of the right shape and then run a forward pass through each
+    normalisation layer explicitly.
+
+    :param inference: A freshly created :class:`sbi.inference.NPE` object
+        whose ``_build_neural_net`` has not yet been called.
+    :param theta_dim: Number of parameters (theta columns).
+    :param x_dim: Number of observables (x columns).
+    :returns: The density estimator with correctly shaped buffers, in eval
+        mode on CPU.
+    """
+    dummy_theta = torch.zeros(2, theta_dim)
+    dummy_x = torch.zeros(2, x_dim)
+
+    # _build_neural_net calls append_simulations internally, which sets the
+    # buffer shapes from the shapes of dummy_theta and dummy_x.
+    density_estimator = inference._build_neural_net(dummy_theta, dummy_x)
+    density_estimator.eval()
+
+    with torch.no_grad():
+        net = getattr(density_estimator, "net", None)
+        if net is None:
+            return density_estimator
+
+        # Prime the embedding-net z-score layer (shapes x_dim buffers).
+        embedding_net = getattr(net, "_embedding_net", None)
+        if embedding_net is not None:
+            try:
+                embedding_net(dummy_x)
+            except Exception:
+                # Some embedding nets are identity / don't accept plain input;
+                # _build_neural_net will have already sized the buffers.
+                pass
+
+        # Prime the flow z-score layer (shapes theta_dim buffers).
+        # We cannot call density_estimator.forward() because NFlowsFlow
+        # requires (theta, x) and performs the full expensive transform, but
+        # we only need the first standardisation layer to run.
+        transform = getattr(net, "_transform", None)
+        if transform is not None:
+            transforms = getattr(transform, "_transforms", [])
+            if transforms:
+                first = transforms[0]
+                # Standardize.forward(theta) is safe to call directly.
+                if hasattr(first, "_shift") and first._shift.shape:
+                    # Already sized — nothing to do.
+                    pass
+                elif callable(first):
+                    try:
+                        first(dummy_theta)
+                    except Exception:
+                        pass
+
+    return density_estimator
+
+
 class InferenceHandler:
     """
     High-level interface for NPE training and posterior sampling.
@@ -143,18 +284,8 @@ class InferenceHandler:
         :param config: Architecture and hyperparameter settings. See
             :class:`~mach3sbitools.utils.PosteriorConfig`.
         """
-
-        # embedding_net = embedding_nets.FCEmbedding(
-        #     input_dim=self.prior.n_params,
-        #     output_dim=93,
-        #     num_layers=20,
-        #     num_hiddens=50,
-        #     enable_layer_norm=True,
-        # )
-
         neural_net = posterior_nn(
             model=config.model,
-            # embedding_net=embedding_net,
             hidden_features=config.hidden_features,
             num_transforms=config.num_transforms,
             dropout_probability=config.dropout_probability,
@@ -360,23 +491,33 @@ class InferenceHandler:
         Load a trained density estimator from a checkpoint file.
 
         The ``PosteriorConfig`` is read from the checkpoint's
-        ``"model_config"`` key. If *posterior_config* is also supplied it is
-        silently ignored — the checkpoint is the authoritative source of
-        truth for the model architecture, preventing silent mismatches.
+        ``"model_config"`` key when present. If *posterior_config* is also
+        supplied alongside a checkpoint that already contains a
+        ``"model_config"``, a warning is emitted and the checkpoint config
+        is used — it is the authoritative source of truth for the model
+        architecture, preventing silent mismatches.
 
-        Supports both best-model state dicts (plain ``state_dict``) and
-        autosave checkpoints (dicts with a ``"model_state"`` key).
+        Supports both autosave checkpoints (dicts with ``"model_state"`` and
+        ``"model_config"`` keys) and plain state dicts (legacy format that
+        requires ``posterior_config`` to be supplied explicitly).
+
+        The model dimensions (``theta_dim``, ``x_dim``) are always inferred
+        directly from the checkpoint's state dict, never from the config.
+        This guarantees that the z-score buffers (``_shift`` / ``_scale`` /
+        ``_mean`` / ``_std``) are sized correctly before ``load_state_dict``
+        is called, avoiding shape-mismatch ``RuntimeError``s.
 
         :param checkpoint_path: Path to a ``.pt`` / ``.ckpt`` checkpoint
             file.
         :param posterior_config: Ignored when the checkpoint contains a
             ``"model_config"`` entry (i.e. any checkpoint produced by a
-            current trainer). Accepted as a keyword only for backwards
-            compatibility with older checkpoints that pre-date self-contained
-            saves.
+            current trainer). Required for legacy plain state-dict
+            checkpoints that pre-date self-contained saves.
         :raises FileNotFoundError: If *checkpoint_path* does not exist.
         :raises ValueError: If no model config can be found in the checkpoint
             and none was supplied.
+        :raises ValueError: If dimensions cannot be inferred from the state
+            dict.
         """
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
@@ -384,86 +525,71 @@ class InferenceHandler:
 
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
+        # ── Unpack state dict and config from the checkpoint ──────────────────
         if isinstance(ckpt, dict) and "model_state" in ckpt:
             state_dict = ckpt["model_state"]
-            if any(k.startswith("_orig_mod.") for k in state_dict):
-                state_dict = {
-                    k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
-                }
-                logger.debug(
-                    "Stripped _orig_mod. prefix from compiled model state dict"
-                )
-            logger.info(f"Loading autosave checkpoint from epoch {ckpt['epoch']}")
+            logger.info(f"Loading autosave checkpoint from epoch {ckpt.get('epoch')}")
 
-            config: PosteriorConfig | None = (
-                ckpt.get("model_config") or posterior_config
-            )
-            if config is None:
-                raise ValueError(
-                    "Checkpoint does not contain a model_config and none was "
-                    "supplied. Pass posterior_config= explicitly for old checkpoints."
-                )
-            if ckpt.get("model_config") and posterior_config is not None:
+            ckpt_config: PosteriorConfig | None = ckpt.get("model_config")
+
+            if ckpt_config is not None and posterior_config is not None:
                 logger.warning(
                     "Both a checkpoint model_config and a posterior_config were "
                     "provided. The checkpoint config will be used — the supplied "
                     "config is ignored."
                 )
+
+            # Always prefer the config baked into the checkpoint.
+            config: PosteriorConfig | None = ckpt_config or posterior_config
+
+            if config is None:
+                raise ValueError(
+                    "Checkpoint does not contain a model_config and none was "
+                    "supplied. Pass posterior_config= explicitly for old checkpoints."
+                )
         else:
+            # Legacy plain state dict.
             state_dict = ckpt
             config = posterior_config
-            logger.info("Loading best-model state dict")
+            logger.info("Loading plain state-dict checkpoint")
             if config is None:
                 raise ValueError(
                     "Plain state-dict checkpoint contains no model_config. "
                     "Pass posterior_config= explicitly."
                 )
 
-        self.create_posterior(config)
+        # Strip torch.compile prefix if present.
+        if any(k.startswith("_orig_mod.") for k in state_dict):
+            state_dict = {
+                k.removeprefix("_orig_mod."): v for k, v in state_dict.items()
+            }
+            logger.debug("Stripped _orig_mod. prefix from compiled model state dict")
 
-        try:
-            x_dim = state_dict["net._embedding_net.0._mean"].shape[0]
-            theta_dim = next(
-                v.shape[1]
-                for k, v in state_dict.items()
-                if "autoregressive_net.initial_layer.weight" in k
-            )
-        except (KeyError, StopIteration) as exc:
-            raise ValueError(
-                "Could not infer theta/x dimensions from checkpoint state dict. "
-                "The checkpoint may be corrupt or from an incompatible sbi version."
-            ) from exc
-
+        # ── Infer dimensions from the checkpoint itself ───────────────────────
+        # We read theta_dim and x_dim from the state dict rather than from the
+        # config so that the z-score buffers are always sized to match the
+        # weights that are about to be loaded, regardless of what the config
+        # says.
+        theta_dim, x_dim = _infer_dims_from_state_dict(state_dict)
         logger.debug(f"Inferred from checkpoint: theta_dim={theta_dim}, x_dim={x_dim}")
 
-        if self.inference is None:
-            raise ValueError("Cannot find inference.")
+        # ── Rebuild the network with correctly shaped buffers ─────────────────
+        # create_posterior() constructs a fresh NPE object (self.inference).
+        # _build_and_prime_density_estimator() then calls
+        # inference._build_neural_net() with real-shaped dummy tensors so that
+        # sbi's Standardize layers allocate 1-D buffers of the right length,
+        # and then runs the normalisation layers forward once to ensure the
+        # buffers are not still scalar [] tensors.
+        self.create_posterior(config)
 
-        # _build_neural_net primes the structured z-score buffers by internally
-        # calling append_simulations, which sets buffer shapes from the dummy
-        # theta and x tensors. Passing real-shaped tensors here ensures the
-        # buffer shapes match those stored in the checkpoint before we call
-        # load_state_dict.
-        density_estimator = self.inference._build_neural_net(
-            torch.zeros(2, theta_dim),
-            torch.zeros(2, x_dim),
+        if self.inference is None:
+            raise ValueError("create_posterior() did not initialise self.inference.")
+
+        density_estimator = _build_and_prime_density_estimator(
+            self.inference, theta_dim, x_dim
         )
 
-        # Explicitly prime the z-score layers by running them in isolation.
-        # NFlowsFlow has no forward() so we cannot call the full network, but
-        # the embedding net and standardisation layers do support direct calls.
-        with torch.no_grad():
-            if hasattr(density_estimator, "net") and hasattr(
-                density_estimator.net, "_embedding_net"
-            ):
-                density_estimator.net._embedding_net(torch.zeros(2, x_dim))
-            if hasattr(density_estimator, "net") and hasattr(
-                density_estimator.net, "_transform"
-            ):
-                transforms = density_estimator.net._transform._transforms
-                if transforms and hasattr(transforms[0], "_shift"):
-                    transforms[0]._shift  # access to trigger any lazy init
-
+        # ── Load weights ──────────────────────────────────────────────────────
         density_estimator.load_state_dict(state_dict)
         density_estimator.to(self.device_handler.device).eval()
         self._density_estimator = density_estimator
