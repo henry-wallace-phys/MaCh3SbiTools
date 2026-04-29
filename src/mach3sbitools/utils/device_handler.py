@@ -18,8 +18,10 @@ class TorchDeviceHandler:
     The device is detected once at construction time and cached.
     """
 
+    _device: str
+
     def __init__(self):
-        self._device: str = self._find_device()
+        self._device = self._find_device()
 
     @property
     def device(self) -> str:

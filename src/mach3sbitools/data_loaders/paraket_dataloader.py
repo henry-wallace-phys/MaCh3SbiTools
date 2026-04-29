@@ -58,7 +58,9 @@ class ParaketDataset(Dataset):
         )
         return torch.from_numpy(theta), torch.from_numpy(x)
 
-    def to_tensor_dataset(self, device: str = "cpu") -> TensorDataset:
+    def to_tensor_dataset(
+        self, device: str = "cpu", verbose: bool = True
+    ) -> TensorDataset:
         """
         Pre-load all feather files into a flat :class:`~torch.utils.data.TensorDataset`.
 
@@ -72,7 +74,9 @@ class ParaketDataset(Dataset):
         """
         all_theta, all_x = [], []
 
-        for idx in tqdm(range(len(self)), desc="Pre-loading dataset"):
+        for idx in tqdm(
+            range(len(self)), desc="Pre-loading dataset", disable=not verbose
+        ):
             theta, x = self[idx]
             all_theta.append(theta)
             all_x.append(x)
@@ -80,10 +84,11 @@ class ParaketDataset(Dataset):
         theta_tensor = torch.cat(all_theta, dim=0).to(device)
         x_tensor = torch.cat(all_x, dim=0).to(device)
 
-        print(
-            f"Loaded {theta_tensor.shape[0]:,} simulations | "
-            f"θ: {theta_tensor.shape[1]}D  x: {x_tensor.shape[1]}D | "
-            f"RAM: {(theta_tensor.nbytes + x_tensor.nbytes) / 1e9:.2f} GB"
-        )
+        if verbose:
+            print(
+                f"Loaded {theta_tensor.shape[0]:,} simulations | "
+                f"θ: {theta_tensor.shape[1]}D  x: {x_tensor.shape[1]}D | "
+                f"RAM: {(theta_tensor.nbytes + x_tensor.nbytes) / 1e9:.2f} GB"
+            )
 
         return TensorDataset(theta_tensor, x_tensor)

@@ -312,7 +312,7 @@ class TestInferenceHandlerCheckpoints:
             assert ks_stat < 0.1, f"Parameter {i}: KS={ks_stat:.3f}"
 
     def test_load_posterior_autosave_format(
-        self, prior_save, posterior_config, tmp_path
+        self, prior_save, posterior_config, tmp_path, training_config
     ):
         prior = load_prior(prior_save)
         neural_net = posterior_nn(
@@ -324,7 +324,7 @@ class TestInferenceHandlerCheckpoints:
             num_bins=posterior_config.num_bins,
             device=prior.device_handler.device,
             z_score_x="structured",
-            z_score_theta="structured",
+            z_score_theta="independent",
         )
         npe = NPE(
             prior=prior,
@@ -346,7 +346,7 @@ class TestInferenceHandlerCheckpoints:
         torch.save(ckpt, ckpt_path)
 
         handler = InferenceHandler(prior_save)
-        handler.load_posterior(ckpt_path)
+        handler.load_posterior(ckpt_path, None)
         assert handler._density_estimator is not None
 
     def test_load_posterior_warns_when_both_configs_provided(
@@ -362,7 +362,7 @@ class TestInferenceHandlerCheckpoints:
             num_bins=posterior_config.num_bins,
             device=prior.device_handler.device,
             z_score_x="structured",
-            z_score_theta="structured",
+            z_score_theta="independent",
         )
         npe = NPE(
             prior=prior,

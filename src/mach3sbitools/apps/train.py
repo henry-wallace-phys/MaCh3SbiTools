@@ -1,4 +1,9 @@
+"""Train application module."""
+
+import os
 from pathlib import Path
+
+import torch
 
 from mach3sbitools.inference import InferenceHandler
 from mach3sbitools.utils import PosteriorConfig, TrainingConfig, get_logger
@@ -38,8 +43,9 @@ def train_module(
     linear warm-up, ReduceLROnPlateau scheduling, EMA-based early stopping,
     and periodic checkpointing.
 
-    The full model configuration (architecture + hyperparameters) is embedded
-    in every checkpoint, so ``inference`` requires no architecture flags.
+    When ``--resume_checkpoint`` is supplied the architecture is read directly
+    from that checkpoint — no ``--model`` / ``--hidden`` / etc. flags are
+    needed and any that are passed are silently ignored.
 
     Example::
 
@@ -47,21 +53,15 @@ def train_module(
             -r prior.pkl -d sims/ -s models/run.pt \\
             --model maf --hidden 128 --transforms 8 \\
             --max_epochs 50000 --stop_after_epochs 200
+
+    Resume::
+
+        mach3sbi train \\
+            -r prior.pkl -d sims/ -s models/run.pt \\
+            --resume_checkpoint models/last.ckpt \\
+            --max_epochs 50000 --stop_after_epochs 200
     """
     logger = get_logger()
-    if compile_model:
-        logger.warning(
-            "Requested model compilation. In testing this has been shown to be slower."
-        )
-
-    posterior_config = PosteriorConfig(
-        model=model,
-        hidden_features=hidden,
-        num_transforms=transforms,
-        dropout_probability=dropout,
-        num_blocks=num_blocks,
-        num_bins=num_bins,
-    )
 
     save_file = Path(save_file)
     save_file.parent.mkdir(parents=True, exist_ok=True)
@@ -85,12 +85,30 @@ def train_module(
         ema_alpha=ema_alpha,
     )
 
-    if resume_checkpoint:
-        get_logger().info(f"Resuming from {resume_checkpoint}")
+    # Dataset loading is always required — shared CPU tensor, single load.
+    handler = InferenceHandler(Path(prior_path), nuisance_pars)
+    handler.set_dataset(Path(dataset))
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    # All ranks must wait for rank 0 to finish loading before proceeding.
+    handler.load_training_data(local_rank == 0)
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        torch.distributed.barrier()
 
-    inference_handler = InferenceHandler(Path(prior_path), nuisance_pars)
-    inference_handler.set_dataset(Path(dataset))
-    inference_handler.load_training_data()
-    inference_handler.create_posterior(posterior_config)
-    # model_config is passed through so every checkpoint is self-contained
-    inference_handler.train_posterior(training_config, model_config=posterior_config)
+    if resume_checkpoint:
+        # ── Resume path ────────────────────────────────────────────────────
+        # Architecture is read from the checkpoint; user-supplied model flags
+        # are intentionally not used here to avoid silent mismatches.
+        logger.info(f"Resuming from checkpoint: [cyan]{resume_checkpoint}[/]")
+        handler.resume_training(Path(resume_checkpoint), training_config)
+    else:
+        # ── Fresh training path ────────────────────────────────────────────
+        posterior_config = PosteriorConfig(
+            model=model,
+            hidden_features=hidden,
+            num_transforms=transforms,
+            dropout_probability=dropout,
+            num_blocks=num_blocks,
+            num_bins=num_bins,
+        )
+        handler.create_posterior(posterior_config)
+        handler.train_posterior(training_config, model_config=posterior_config)
