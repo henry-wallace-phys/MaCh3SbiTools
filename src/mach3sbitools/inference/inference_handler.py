@@ -467,7 +467,7 @@ class InferenceHandler:
         assert self._tensor_dataset is not None
         sample_theta = self._tensor_dataset.tensors[0][:10]
         sample_x = self._tensor_dataset.tensors[1][:10]
-        return self.inference._build_neural_net(sample_theta, sample_x)
+        return cast(nn.Module, self.inference._build_neural_net(sample_theta, sample_x))
 
     def _fit(
         self,

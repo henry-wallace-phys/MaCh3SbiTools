@@ -153,7 +153,10 @@ class SBILightningModule(L.LightningModule):
             sync_dist=True,
         )
 
-        # ── Learning rate ─────────────────────────────────────────────────
+        # ── Learning rate ────────────────────────────────────w─────────────
+        assert isinstance(self.optimizers(), torch.optim.Optimizer), (
+            "Expected a single optimizer"
+        )
         for i, pg in enumerate(self.optimizers().param_groups):
             self.log(f"optim/lr_group_{i}", pg["lr"], sync_dist=True)
 
