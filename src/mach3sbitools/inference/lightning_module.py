@@ -1,23 +1,18 @@
 """
 PyTorch Lightning module for SBI density estimator training.
-
-Wraps an ``sbi`` density estimator in a :class:`~lightning.LightningModule`
-to enable multi-GPU and multi-node training via DDP. The typical workflow
-is to construct this module and pass it to a
-:class:`~lightning.pytorch.trainer.Trainer` alongside an
-:class:`SBIDataModule`::
-
-    module = SBILightningModule(density_estimator, config, model_config)
-    datamodule = SBIDataModule(dataset, config)
-    trainer = L.Trainer(strategy="ddp", accelerator="auto", devices="auto")
-    trainer.fit(module, datamodule=datamodule)
 """
+
+from __future__ import annotations
+
+import time
 
 import lightning as L
 import torch
 from sbi.neural_nets.estimators.base import ConditionalEstimator
 
 from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
+
+_EXPENSIVE_LOG_EVERY_N_EPOCHS = 10
 
 
 class SBILightningModule(L.LightningModule):
@@ -27,16 +22,31 @@ class SBILightningModule(L.LightningModule):
     Handles the training and validation steps, EMA-smoothed validation loss
     tracking, and the learning rate scheduler.
 
-    All logged metrics use ``sync_dist=True`` so that early stopping and
-    checkpointing behave correctly across ranks in DDP training.
+    Metrics logged to TensorBoard
+    ------------------------------
+    Every epoch:
+        train/loss, train/loss_std          — training loss mean and spread
+        val/loss, val/loss_std              — validation loss mean and spread
+        val/ema_loss                        — EMA-smoothed validation loss
+        diagnostics/train_val_gap           — overfitting signal
+        diagnostics/loss_improvement        — absolute epoch-on-epoch improvement
+        diagnostics/relative_improvement    — scale-independent convergence signal
+        diagnostics/ema_stability           — EMA bounce (high = LR too large)
+        perf/samples_per_sec                — training throughput
+        perf/epoch_time_sec                 — wall-clock epoch time
+        perf/steps_per_epoch                — batches processed
+        perf/effective_batch_size           — batch_size x world_size
+        optim/lr_group_N                    — current learning rate(s)
+        gpu/allocated_mb                    — VRAM allocated
+        gpu/reserved_mb                     — VRAM reserved
+        gpu/memory_pressure                 — fraction of total VRAM used
 
-    .. note::
-
-        The density estimator is **not** passed to
-        :meth:`~lightning.LightningModule.save_hyperparameters` because
-        ``sbi`` networks are not always cleanly serialisable as hyperparameters.
-        The ``model_config`` is saved instead so the architecture can be
-        reconstructed at load time.
+    Every ``_EXPENSIVE_LOG_EVERY_N_EPOCHS`` epochs:
+        train/grad_norm                     — global gradient norm
+        train/param_norm                    — global parameter norm
+        grad_norms/<layer>                  — per-layer gradient norms
+        weights/<layer>/std                 — per-layer weight standard deviation
+        weights/<layer>/max_abs             — per-layer maximum absolute weight
     """
 
     def __init__(
@@ -46,14 +56,9 @@ class SBILightningModule(L.LightningModule):
         model_config: PosteriorConfig | None = None,
     ):
         """
-        :param density_estimator: The ``sbi`` density estimator network to
-            train. Must expose a ``.loss(theta, x)`` method that returns a
-            per-sample loss tensor of shape ``(batch_size,)``.
-        :param config: Training loop hyperparameters. See
-            :class:`~mach3sbitools.utils.config.TrainingConfig`.
-        :param model_config: Architecture configuration embedded in every
-            checkpoint so the model can be reconstructed without supplying
-            the config again at load time. ``None`` disables this embedding.
+        :param density_estimator: The ``sbi`` density estimator to train.
+        :param config: Training loop hyperparameters.
+        :param model_config: Architecture config embedded in every checkpoint.
         """
         super().__init__()
         self.model = density_estimator
@@ -61,7 +66,18 @@ class SBILightningModule(L.LightningModule):
         self.model_config = model_config
         self.save_hyperparameters(ignore=["density_estimator"])
 
+        # EMA state
         self.ema_val_loss: float = float("inf")
+
+        # Diagnostics state
+        self._prev_val_loss: float = float("inf")
+        self._prev_ema_loss: float = float("inf")
+
+        # Throughput state
+        self._epoch_start_time: float = 0.0
+        self._train_samples_seen: int = 0
+
+    # ── Forward ───────────────────────────────────────────────────────────────
 
     def forward(self, theta: torch.Tensor, x: torch.Tensor):
         """
@@ -73,112 +89,209 @@ class SBILightningModule(L.LightningModule):
         """
         return self.model.loss(theta, x)
 
+    # ── Training ──────────────────────────────────────────────────────────────
+
+    def on_train_epoch_start(self) -> None:
+        """Record epoch start time and reset sample counter."""
+        self._epoch_start_time = time.perf_counter()
+        self._train_samples_seen = 0
+
     def training_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         """
-        Compute and log the mean training loss for one batch.
-
-        Logged as ``train_loss`` — aggregated per epoch, shown in the
-        progress bar, and synchronised across DDP ranks.
+        Compute and log the training loss for one batch.
 
         :param batch: Tuple of ``(theta, x)`` tensors.
-        :param batch_idx: Index of the current batch within the epoch.
-        :returns: Scalar mean loss for this batch.
+        :param batch_idx: Index of the current batch.
+        :returns: Scalar mean loss.
         """
         theta, x = batch
-        loss = self.model.loss(theta, x).mean()
+        loss_per_sample = self.model.loss(theta, x)
+        loss = loss_per_sample.mean()
+
+        self._train_samples_seen += theta.shape[0]
+
         self.log(
-            "train_loss",
+            "train/loss",
             loss,
             on_step=True,
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
         )
+        self.log(
+            "train/loss_std",
+            loss_per_sample.std(),
+            on_step=True,
+            on_epoch=False,
+            sync_dist=True,
+        )
         return loss
+
+    def on_train_epoch_end(self) -> None:
+        """
+        Log throughput, GPU memory, and (every N epochs) gradient and weight
+        statistics.
+        """
+        elapsed = time.perf_counter() - self._epoch_start_time
+        do_expensive = self.current_epoch % _EXPENSIVE_LOG_EVERY_N_EPOCHS == 0
+
+        # ── Throughput ────────────────────────────────────────────────────
+        self.log(
+            "perf/samples_per_sec",
+            self._train_samples_seen / max(elapsed, 1e-6),
+            sync_dist=True,
+        )
+        self.log("perf/epoch_time_sec", elapsed, sync_dist=True)
+        self.log(
+            "perf/steps_per_epoch",
+            float(self._train_samples_seen) / self.config.batch_size,
+            sync_dist=True,
+        )
+        self.log(
+            "perf/effective_batch_size",
+            float(self.config.batch_size * self.trainer.world_size),
+            sync_dist=True,
+        )
+
+        # ── Learning rate ─────────────────────────────────────────────────
+        for i, pg in enumerate(self.optimizers().param_groups):
+            self.log(f"optim/lr_group_{i}", pg["lr"], sync_dist=True)
+
+        # ── GPU memory ────────────────────────────────────────────────────
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024**2
+            reserved = torch.cuda.memory_reserved() / 1024**2
+            total = torch.cuda.get_device_properties(self.device).total_memory / 1024**2
+            self.log("gpu/allocated_mb", allocated, sync_dist=True)
+            self.log("gpu/reserved_mb", reserved, sync_dist=True)
+            self.log("gpu/memory_pressure", allocated / total, sync_dist=True)
+
+        # ── Expensive: gradient and weight statistics ─────────────────────
+        if do_expensive:
+            total_grad_norm_sq = 0.0
+            total_param_norm_sq = 0.0
+
+            for name, p in self.model.named_parameters():
+                if not p.requires_grad:
+                    continue
+
+                # Weight statistics
+                self.log(f"weights/{name}/std", p.data.std(), sync_dist=True)
+                self.log(f"weights/{name}/max_abs", p.data.abs().max(), sync_dist=True)
+                total_param_norm_sq += p.data.norm(2).item() ** 2
+
+                # Gradient statistics
+                if p.grad is not None:
+                    layer_grad_norm = p.grad.data.norm(2).item()
+                    total_grad_norm_sq += layer_grad_norm**2
+                    self.log(f"grad_norms/{name}", layer_grad_norm, sync_dist=True)
+
+            self.log("train/grad_norm", total_grad_norm_sq**0.5, sync_dist=True)
+            self.log("train/param_norm", total_param_norm_sq**0.5, sync_dist=True)
+
+    # ── Validation ────────────────────────────────────────────────────────────
 
     def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         """
-        Compute and log the mean validation loss for one batch.
-
-        Logged as ``val_loss`` — aggregated per epoch, shown in the
-        progress bar, and synchronised across DDP ranks.
+        Compute and log the validation loss for one batch.
 
         :param batch: Tuple of ``(theta, x)`` tensors.
-        :param batch_idx: Index of the current batch within the epoch.
-        :returns: Scalar mean loss for this batch.
+        :param batch_idx: Index of the current batch.
+        :returns: Scalar mean loss.
         """
         theta, x = batch
-        loss = self.model.loss(theta, x).mean()
+        loss_per_sample = self.model.loss(theta, x)
+        loss = loss_per_sample.mean()
+
         self.log(
-            "val_loss",
+            "val/loss",
             loss,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             sync_dist=True,
         )
+        self.log(
+            "val/loss_std",
+            loss_per_sample.std(),
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+        )
         return loss
 
     def on_validation_epoch_end(self) -> None:
         """
-        Update and log the EMA-smoothed validation loss after each epoch.
-
-        The EMA is initialised to ``inf`` on the first epoch so the first
-        real validation loss is always accepted as the best. Logged as
-        ``ema_val_loss`` and used by
-        :class:`~lightning.pytorch.callbacks.EarlyStopping` and
-        :class:`~lightning.pytorch.callbacks.ModelCheckpoint`.
+        Update EMA loss and log convergence diagnostics.
         """
-        val_loss = self.trainer.callback_metrics.get("val_loss", float("inf"))
+        val_loss = float(self.trainer.callback_metrics.get("val/loss", float("inf")))
+
+        # ── EMA update ────────────────────────────────────────────────────
         self.ema_val_loss = (
-            float(val_loss)
+            val_loss
             if self.ema_val_loss == float("inf")
-            else self.config.ema_alpha * float(val_loss)
+            else self.config.ema_alpha * val_loss
             + (1 - self.config.ema_alpha) * self.ema_val_loss
         )
-        self.log("ema_val_loss", self.ema_val_loss, sync_dist=True)
+        self.log("val/ema_loss", self.ema_val_loss, sync_dist=True, prog_bar=True)
 
-    def on_train_epoch_end(self) -> None:
-        """
-        Log per-rank GPU memory statistics at the end of each training epoch.
+        # ── EMA stability — large value means LR is too high ──────────────
+        if self._prev_ema_loss != float("inf"):
+            self.log(
+                "diagnostics/ema_stability",
+                abs(self.ema_val_loss - self._prev_ema_loss),
+                sync_dist=True,
+            )
+        self._prev_ema_loss = self.ema_val_loss
 
-        Records allocated and reserved VRAM in megabytes. Logged with
-        ``sync_dist=False`` because GPU memory is a per-rank quantity —
-        averaging across ranks is not meaningful.
-        """
-        if torch.cuda.is_available():
-            allocated = torch.cuda.memory_allocated() / 1024**2
-            reserved = torch.cuda.memory_reserved() / 1024**2
-            self.log("gpu/allocated_mb", allocated, sync_dist=False)
-            self.log("gpu/reserved_mb", reserved, sync_dist=False)
+        # ── Train / val gap — widening gap means overfitting ──────────────
+        train_loss = self.trainer.callback_metrics.get("train/loss_epoch", float("inf"))
+        if train_loss != float("inf"):
+            self.log(
+                "diagnostics/train_val_gap",
+                val_loss - float(train_loss),
+                sync_dist=True,
+            )
+
+        # ── Loss improvement ──────────────────────────────────────────────
+        if self._prev_val_loss != float("inf"):
+            improvement = self._prev_val_loss - val_loss
+            self.log("diagnostics/loss_improvement", improvement, sync_dist=True)
+            self.log(
+                "diagnostics/relative_improvement",
+                improvement / (abs(self._prev_val_loss) + 1e-8),
+                sync_dist=True,
+            )
+        self._prev_val_loss = val_loss
+
+    # ── Optimiser ─────────────────────────────────────────────────────────────
 
     def configure_optimizers(self):
+        """Adam + ReduceLROnPlateau scheduler monitoring ``val/ema_loss``."""
         optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.config.learning_rate, weight_decay=1e-5
+            self.model.parameters(),
+            lr=self.config.learning_rate,
+            weight_decay=1e-5,
         )
-
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             patience=self.config.scheduler_patience,
             factor=0.5,
             min_lr=1e-8,
         )
-
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "ema_val_loss",
+                "monitor": "val/ema_loss",
             },
         }
 
-    def on_save_checkpoint(self, checkpoint: dict) -> None:
-        # Save only the model weights explicitly
-        checkpoint["model_state"] = self.model.state_dict()
+    # ── Checkpoint ────────────────────────────────────────────────────────────
 
-        # Optionally store config (small, safe)
+    def on_save_checkpoint(self, checkpoint: dict) -> None:
+        """Embed model weights, architecture config, and epoch into checkpoint."""
+        checkpoint["model_state"] = self.model.state_dict()
         if self.model_config is not None:
             checkpoint["model_config"] = self.model_config
-
-        # You can also store epoch for convenience
         checkpoint["epoch"] = self.current_epoch

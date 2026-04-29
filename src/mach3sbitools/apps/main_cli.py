@@ -253,7 +253,7 @@ def save_data(
 @optgroup.group("Model Architecture")
 @optgroup.option(
     "--model",
-    default="maf",
+    default="zuko_maf",
     show_default=True,
     help="Density estimator architecture: 'maf' (Masked Autoregressive Flow) or 'nse' (Neural Spline Flow).",
 )
@@ -677,6 +677,7 @@ def diagnostics(
     n_prior_samples: int,
     n_posterior_samples: int,
 ) -> None:
+
     diagnostics_module(
         simulator_module,
         simulator_class,
