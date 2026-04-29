@@ -154,10 +154,8 @@ class SBILightningModule(L.LightningModule):
         )
 
         # ── Learning rate ────────────────────────────────────w─────────────
-        assert isinstance(self.optimizers(), torch.optim.Optimizer), (
-            "Expected a single optimizer"
-        )
-        for i, pg in enumerate(self.optimizers().param_groups):
+
+        for i, pg in enumerate(self.optimizers().param_groups):  # type: ignore
             self.log(f"optim/lr_group_{i}", pg["lr"], sync_dist=True)
 
         # ── GPU memory ────────────────────────────────────────────────────
