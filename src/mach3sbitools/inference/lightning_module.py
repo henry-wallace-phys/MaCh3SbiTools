@@ -158,7 +158,7 @@ class SBILightningModule(L.LightningModule):
             self.log(f"optim/lr_group_{i}", pg["lr"], sync_dist=True)
 
         # ── GPU memory ────────────────────────────────────────────────────
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and self.device.type == "cuda":
             allocated = torch.cuda.memory_allocated() / 1024**2
             reserved = torch.cuda.memory_reserved() / 1024**2
             total = torch.cuda.get_device_properties(self.device).total_memory / 1024**2

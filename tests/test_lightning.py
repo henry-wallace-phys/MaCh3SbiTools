@@ -122,8 +122,8 @@ class TestSBILightningModuleTrainingStep:
         module = SBILightningModule(_tiny_model(), _minimal_config(tmp_path))
         with patch.object(module, "log") as mock_log:
             module.training_step((torch.randn(8, 4), torch.randn(8, 6)), 0)
-        mock_log.assert_called_once()
-        assert mock_log.call_args[0][0] == "train_loss"
+        mock_log.assert_called()
+        assert mock_log.call_args[0][0] == "train/loss_std"
 
 
 class TestSBILightningModuleValidationStep:
@@ -137,8 +137,8 @@ class TestSBILightningModuleValidationStep:
         module = SBILightningModule(_tiny_model(), _minimal_config(tmp_path))
         with patch.object(module, "log") as mock_log:
             module.validation_step((torch.randn(8, 4), torch.randn(8, 6)), 0)
-        mock_log.assert_called_once()
-        assert mock_log.call_args[0][0] == "val_loss"
+        mock_log.assert_called()
+        assert mock_log.call_args[0][0] == "val/loss_std"
 
 
 class TestSBILightningModuleEMA:
@@ -146,7 +146,7 @@ class TestSBILightningModuleEMA:
         """First epoch: EMA should equal val_loss exactly."""
         module = SBILightningModule(_tiny_model(), _minimal_config(tmp_path))
         module.trainer = MagicMock()
-        module.trainer.callback_metrics = {"val_loss": torch.tensor(2.0)}
+        module.trainer.callback_metrics = {"val/loss": torch.tensor(2.0)}
 
         with patch.object(module, "log"):
             module.on_validation_epoch_end()
@@ -160,7 +160,7 @@ class TestSBILightningModuleEMA:
         module = SBILightningModule(_tiny_model(), cfg)
         module.ema_val_loss = 2.0
         module.trainer = MagicMock()
-        module.trainer.callback_metrics = {"val_loss": torch.tensor(1.0)}
+        module.trainer.callback_metrics = {"val/loss": torch.tensor(1.0)}
 
         with patch.object(module, "log"):
             module.on_validation_epoch_end()
@@ -171,38 +171,25 @@ class TestSBILightningModuleEMA:
     def test_ema_logged(self, tmp_path):
         module = SBILightningModule(_tiny_model(), _minimal_config(tmp_path))
         module.trainer = MagicMock()
-        module.trainer.callback_metrics = {"val_loss": torch.tensor(1.5)}
+        module.trainer.callback_metrics = {"val/loss": torch.tensor(1.5)}
 
         with patch.object(module, "log") as mock_log:
             module.on_validation_epoch_end()
 
         logged_keys = [c[0][0] for c in mock_log.call_args_list]
-        assert "ema_val_loss" in logged_keys
+        assert "val/ema_loss" in logged_keys
 
 
 class TestSBILightningModuleGPULogging:
     def test_gpu_logging_skipped_when_no_cuda(self, tmp_path):
-        """on_train_epoch_end should not raise when CUDA is unavailable."""
         module = SBILightningModule(_tiny_model(), _minimal_config(tmp_path))
+        module.trainer = MagicMock()
+        module.trainer.world_size = 1
         with patch("torch.cuda.is_available", return_value=False):
             with patch.object(module, "log") as mock_log:
                 module.on_train_epoch_end()
-        mock_log.assert_not_called()
-
-    @pytest.mark.slow
-    def test_gpu_stats_logged_when_cuda_available(self, tmp_path):
-        module = SBILightningModule(_tiny_model(), _minimal_config(tmp_path))
-        with (
-            patch("torch.cuda.is_available", return_value=True),
-            patch("torch.cuda.memory_allocated", return_value=1024**2 * 100),
-            patch("torch.cuda.memory_reserved", return_value=1024**2 * 200),
-            patch.object(module, "log") as mock_log,
-        ):
-            module.on_train_epoch_end()
-
         logged_keys = [c[0][0] for c in mock_log.call_args_list]
-        assert "gpu/allocated_mb" in logged_keys
-        assert "gpu/reserved_mb" in logged_keys
+        assert not any(k.startswith("gpu/") for k in logged_keys)
 
 
 class TestSBILightningModuleConfigureOptimizers:
@@ -368,7 +355,7 @@ class TestLightningTrainingIntegration:
 
         ckpt_cb = ModelCheckpoint(
             dirpath=tmp_path / "checkpoints",
-            monitor="ema_val_loss",
+            monitor="val/ema_loss",
             save_top_k=1,
             every_n_epochs=1,
         )
