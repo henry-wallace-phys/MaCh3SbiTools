@@ -52,6 +52,7 @@ class TrainingConfig:
     tensorboard_dir: Path | None = None
     ema_alpha: float = 0.05
     compile: bool = False
+    prune_model: float | None = None
 
 
 @dataclass

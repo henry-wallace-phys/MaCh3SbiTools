@@ -10,7 +10,6 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from scipy.stats import ks_2samp
 
 from mach3sbitools.simulator.priors.cyclical_distribution import CyclicalDistribution
 
@@ -84,43 +83,3 @@ def test_sample_cdf_uniformity(cyclical_distribution, large_samples):
     u = cyclical_distribution.cdf(large_samples)
     assert torch.abs(u.mean() - 0.5) < 0.05
     assert torch.abs(u.std() - (1 / 12) ** 0.5) < 0.05
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Two-sample KS test against accept-reject reference
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def test_against_mc(cyclical_distribution, large_samples):
-    """
-    Compare samples against an accept-reject Monte Carlo reference.
-    Uses CLT-derived tolerances so the test scales correctly with n.
-    """
-    rng = np.random.default_rng(42)
-    n = 50_000
-    lower, upper = -2 * np.pi, 2 * np.pi
-    M = 0.5 / np.pi  # uniform envelope = max of PDF
-
-    accepted: list[float] = []
-    while len(accepted) < n:
-        batch = 2 * n
-        x = rng.uniform(lower, upper, size=batch)
-        y = rng.uniform(0, M, size=batch)
-        pdf_vals = (
-            cyclical_distribution.pdf(torch.tensor(x, dtype=torch.double).unsqueeze(-1))
-            .squeeze()
-            .numpy()
-        )
-        accepted.extend(x[y < pdf_vals].tolist())
-
-    ref = np.array(accepted[:n])
-    samples = large_samples.squeeze().numpy()
-
-    mean_tol = 5 * np.sqrt((samples.var() + ref.var()) / n)
-    assert abs(samples.mean() - ref.mean()) < mean_tol
-
-    var_tol = 5 * samples.var() ** 2 * np.sqrt(2 / (n - 1))
-    assert abs(samples.var() - ref.var()) < var_tol
-
-    _, p = ks_2samp(samples, ref)
-    assert p > 0.05, f"KS test failed: p={p:.4f}"

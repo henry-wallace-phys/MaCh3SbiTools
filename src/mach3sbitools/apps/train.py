@@ -35,6 +35,7 @@ def train_module(
     scheduler_patience: int,
     show_progress: bool,
     compile_model: bool,
+    prune_model: float | None,
 ) -> None:
     """Train a Neural Posterior Estimation (NPE) density estimator.
 
@@ -83,6 +84,7 @@ def train_module(
         scheduler_patience=scheduler_patience,
         compile=compile_model,
         ema_alpha=ema_alpha,
+        prune_model=prune_model,
     )
 
     # Dataset loading is always required — shared CPU tensor, single load.
