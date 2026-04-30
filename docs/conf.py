@@ -13,7 +13,7 @@ html_logo = "_static/mach3sbi_logo.png"
 
 html_theme_options = {
     "sidebar_hide_name": True,
-    "source_repository": "https://github.com/henry-wallace-phys/MaCh3SbiTools",
+    "source_repository": "https://github.com/mach3-software/MaCh3SbiTools",
     "source_branch": "main",
     "source_directory": "docs/",
 }

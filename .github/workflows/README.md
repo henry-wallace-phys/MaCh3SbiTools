@@ -6,12 +6,12 @@ Automatically tags and creates release whenever the pyproject version is increas
 
 ## Codecov
 
-Creates a code coverage report and uploads to https://app.codecov.io/gh/henry-wallace-phys/MaCh3SbiTools
+Creates a code coverage report and uploads to https://app.codecov.io/gh/mach3-software/MaCh3SbiTools
 whenever a PR to `main` is made
 
 ## Docs
 
-Generates documentation when a PR is accepted and uploads to https://henry-wallace-phys.github.io/MaCh3SbiTools/
+Generates documentation when a PR is accepted and uploads to https://mach3-software.github.io/MaCh3SbiTools/
 
 ## pymach3_integration
 
