@@ -77,7 +77,7 @@ torch.serialization.add_safe_globals(
 
 def _select_accelerator_and_strategy(
     use_model_parallel: bool = False,
-) -> tuple[str, str]:
+) -> tuple[str, str | ModelParallelStrategy]:
     if torch.cuda.is_available():
         return "gpu", ModelParallelStrategy() if use_model_parallel else "ddp"
     if torch.backends.mps.is_available():
