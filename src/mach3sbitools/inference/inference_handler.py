@@ -46,10 +46,14 @@ import torch.autograd.graph
 import torch.nn as nn
 from lightning.pytorch.callbacks import (
     EarlyStopping,
+    GradientAccumulationScheduler,
     LearningRateMonitor,
     ModelCheckpoint,
+    ModelPruning,
 )
 from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.strategies import ModelParallelStrategy
+from lightning.pytorch.tuner import Tuner
 from sbi.inference import NPE, DirectPosterior
 from sbi.inference.posteriors.posterior_parameters import DirectPosteriorParameters
 from sbi.neural_nets import posterior_nn
@@ -69,12 +73,13 @@ torch.set_float32_matmul_precision("medium")
 torch.serialization.add_safe_globals(
     [TrainingConfig, PosteriorConfig, pathlib.PosixPath, pathlib.Path]
 )
-torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False)
 
 
-def _select_accelerator_and_strategy() -> tuple[str, str]:
+def _select_accelerator_and_strategy(
+    use_model_parallel: bool = False,
+) -> tuple[str, str]:
     if torch.cuda.is_available():
-        return "gpu", "ddp"
+        return "gpu", ModelParallelStrategy() if use_model_parallel else "ddp"
     if torch.backends.mps.is_available():
         return "mps", "auto"
     return "cpu", "auto"
@@ -239,8 +244,6 @@ def _infer_dims_from_state_dict(state_dict: dict, theta_dim: int) -> tuple[int, 
 # ---------------------------------------------------------------------------
 # Trainer / callback factories
 # ---------------------------------------------------------------------------
-
-
 def _build_callbacks(config: TrainingConfig) -> list:
     """Construct the standard callback stack from *config*."""
     if config.save_path is None:
@@ -262,6 +265,8 @@ def _build_callbacks(config: TrainingConfig) -> list:
         ),
         model_checkpoint,
         LearningRateMonitor(logging_interval="epoch"),
+        GradientAccumulationScheduler(scheduling={0: 8, 20: 4, 50: 2}),
+        ModelPruning("l1_unstructured", amount=0.5),
     ]
 
 
@@ -479,14 +484,22 @@ class InferenceHandler:
         """Internal: run the Lightning training loop."""
         assert self._tensor_dataset is not None
 
+        lightning_module = SBILightningModule(density_estimator, config, model_config)
+
+        # Compilation currently just seems really slow... (but adding it in for completeness!)
         if config.compile:
             logger.warning(
                 "Requested model compilation. In testing this has been shown to be slower."
             )
+            torch.compile(lightning_module)
 
-        lightning_module = SBILightningModule(density_estimator, config, model_config)
         data_module = SBIDataModule(self._tensor_dataset, config)
         trainer = _build_trainer(config)
+
+        # Set up tuning to get good initial LR + batch size that uses the optimal amount of memory!
+        tuner = Tuner(trainer)
+        tuner.scale_batch_size(lightning_module, mode="power", datamodule=data_module)
+        tuner.lr_find(lightning_module, datamodule=data_module)
 
         trainer.fit(lightning_module, datamodule=data_module, ckpt_path=ckpt_path)
 

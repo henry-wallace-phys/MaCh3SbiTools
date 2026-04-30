@@ -74,6 +74,10 @@ class SBIDataModule(L.LightningDataModule):
         super().__init__()
         self.dataset = dataset
         self.config = config
+
+        # Specifically still save the batch size
+        self.batch_size = config.batch_size
+
         self.train_dataset: Dataset | None = None
         self.val_dataset: Dataset | None = None
 
@@ -110,7 +114,7 @@ class SBIDataModule(L.LightningDataModule):
             raise RuntimeError("Training set has not been set; call setup() first.")
         return DataLoader(
             self.train_dataset,
-            batch_size=self.config.batch_size,
+            batch_size=self.batch_size,
             shuffle=True,
             drop_last=True,
             num_workers=0,
