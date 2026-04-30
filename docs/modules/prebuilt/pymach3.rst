@@ -2,7 +2,7 @@ PyMaCh3
 ==========
 For users of MaCh3 we provide a pre-built simulator for use with pyMaCh3-Tutorial.
 It can be found
-`here <https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main/src/mach3sbitools/examples/pyMaCh3>`_.
+`here <https://github.com/mach3-software/MaCh3SbiTools/tree/main/src/mach3sbitools/examples/pyMaCh3>`_.
 
 Installation instructions for pyMaCh3 can be found in the usual `MaCh3 repo <https://github.com/mach3-software/MaCh3/tree/develop>`_.
 Currently the simulator is set up to work with `MaCh3 Tutorial <https://github.com/mach3-software/MaCh3Tutorial/tree/main>`_

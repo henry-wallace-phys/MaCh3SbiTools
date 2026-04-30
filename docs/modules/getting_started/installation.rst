@@ -8,7 +8,7 @@ This repo currently does not have a PyPy distribution. As a result it must be cl
 .. code-block:: bash
 
     # Clone from github
-    git clone https://github.com/henry-wallace-phys/MaCh3SbiTools/tree/main MaCh3SbiTools
+    git clone https://github.com/mach3-software/MaCh3SbiTools/tree/main MaCh3SbiTools
     cd MaCh3SbiTools
 
 Installing with Pip

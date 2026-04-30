@@ -6,39 +6,39 @@ MaCh3 SBI TOOLS
       :target: https://www.gnu.org/licenses/gpl-3.0
       :alt: license
 
-   .. image:: https://codecov.io/github/henry-wallace-phys/mach3sbitools/graph/badge.svg?token=LY1UV4USFH
-      :target: https://codecov.io/github/henry-wallace-phys/mach3sbitools
+   .. image:: https://codecov.io/github/mach3-software/mach3sbitools/graph/badge.svg?token=LY1UV4USFH
+      :target: https://codecov.io/github/mach3-software/mach3sbitools
       :alt: codecov.io
 
    .. image:: https://img.shields.io/badge/Code-Documented-2ea44f
-      :target: https://henry-wallace-phys.github.io/MaCh3SbiTools
+      :target: https://mach3-software.github.io/MaCh3SbiTools
       :alt: Code - Documented
 
-   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pytest.yml/badge.svg
-      :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pytest.yml
+   .. image:: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/pytest.yml/badge.svg
+      :target: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/pytest.yml
       :alt: unit tests
 
-   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/github-code-scanning/codeql/badge.svg
-      :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/github-code-scanning/codeql
+   .. image:: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/github-code-scanning/codeql/badge.svg
+      :target: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/github-code-scanning/codeql
       :alt: CodeQL
 
-   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/mypy.yml/badge.svg
-      :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/mypy.yml
+   .. image:: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/mypy.yml/badge.svg
+      :target: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/mypy.yml
       :alt: mypy-typecheck
 
-   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/ruff.yml/badge.svg
-      :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/ruff.yml
+   .. image:: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/ruff.yml/badge.svg
+      :target: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/ruff.yml
       :alt: ruff-lint
 
-   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/docs.yml/badge.svg
-      :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/docs.yml
+   .. image:: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/docs.yml/badge.svg
+      :target: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/docs.yml
       :alt: Build & Deploy Sphinx Docs
 
-   .. image:: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pymach3_integration.yml/badge.svg
-      :target: https://github.com/henry-wallace-phys/MaCh3SbiTools/actions/workflows/pymach3_integration.yml
+   .. image:: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/pymach3_integration.yml/badge.svg
+      :target: https://github.com/mach3-software/MaCh3SbiTools/actions/workflows/pymach3_integration.yml
       :alt: PyMaCh3 Integration
 
-`MaCh3 SBI Tools <https://github.com/henry-wallace-phys/MaCh3SbiTools>`_ is a package used to perform
+`MaCh3 SBI Tools <https://github.com/mach3-software/MaCh3SbiTools>`_ is a package used to perform
 Bayesian Simulation based inference with a flexible simulator and training setup using tools from the SBI :cite:`BoeltsDeistler_sbi_2025` package. The simulator is designed to work primarily with MaCh3 :cite:`the_mach3_collaboration_2026_18627288`.
 
 ----
