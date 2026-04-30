@@ -364,6 +364,12 @@ def save_data(
     default=False,
     help="Compile with torch.compile. Reduces per-step time on supported hardware but increases startup time.",
 )
+@optgroup.option(
+    "--prune_model",
+    type=float,
+    default=None,
+    help="Prune the model. This reduces the number of nodes dynamically but may compromise accuracy.",
+)
 # Checkpointing & logging
 @optgroup.group("Checkpointing & Logging")
 @optgroup.option(
@@ -423,6 +429,7 @@ def train(
     scheduler_patience: int,
     show_progress: bool,
     compile_model: bool,
+    prune_model: float | None,
 ) -> None:
     """Train a Neural Posterior Estimation (NPE) density estimator.
 
@@ -468,6 +475,7 @@ def train(
         scheduler_patience,
         show_progress,
         compile_model,
+        prune_model,
     )
 
 

@@ -265,15 +265,19 @@ def _build_callbacks(config: TrainingConfig) -> list:
     )
     model_checkpoint.CHECKPOINT_NAME_LAST = str(config.save_path.stem)
 
-    return [
+    callbacks = [
         EarlyStopping(
             monitor="val/ema_loss", patience=config.stop_after_epochs, mode="min"
         ),
         model_checkpoint,
         LearningRateMonitor(logging_interval="epoch"),
         GradientAccumulationScheduler(scheduling={0: 8, 20: 4, 50: 2}),
-        ModelPruning("l1_unstructured", amount=0.5),
     ]
+
+    if config.prune_model is not None:
+        model_pruning = ModelPruning("l1_unstructured", amount=config.prune_model)
+        callbacks.append(model_pruning)
+    return callbacks
 
 
 def _build_trainer(config: TrainingConfig) -> lightning.Trainer:
