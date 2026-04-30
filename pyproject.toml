@@ -27,7 +27,7 @@ dependencies = [
     "mypy",
     "sphinx",
     "importlib-metadata",
-    "lightning>=2.5",
+    "lightning",
     "awkward[numba]"
 ]
 
