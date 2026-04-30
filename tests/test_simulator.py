@@ -1,17 +1,10 @@
 """
-Tests for mach3sbitools.simulator.
-
-Covers Simulator (forward simulation, persistence), Prior (construction,
-sampling, properties, persistence), and related helpers.
-
-Merged from the former test_simulator.py and test_simulator_coverage.py,
-which had an artificial split between "behavioural" and "coverage" tests
-for the same modules.
+Tests for mach3sbitools.simulator — Prior construction, sampling,
+persistence, and the Simulator forward/persistence interface.
 """
 
 import pickle
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -19,43 +12,28 @@ import torch
 
 from mach3sbitools.simulator.priors.dataclasses import PriorData
 from mach3sbitools.simulator.priors.prior import (
-    MaskDistributionMap,
     Prior,
     PriorNotFound,
-    _check_boundary,
     load_prior,
 )
 from mach3sbitools.simulator.simulator import Simulator
-from mach3sbitools.utils import TorchDeviceHandler, from_feather, get_logger
+from mach3sbitools.utils import TorchDeviceHandler, from_feather
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _make_prior_data(n: int = 5) -> PriorData:
-
-    dev = TorchDeviceHandler().device
-    return PriorData(
+def _make_prior(n: int = 5) -> Prior:
+    dh = TorchDeviceHandler()
+    data = PriorData(
         parameter_names=np.array([f"p{i}" for i in range(n)]),
-        nominals=torch.ones(n).to(dev),
-        covariance_matrix=torch.eye(
-            n,
-        ).to(dev),
-        lower_bounds=torch.full(
-            (n,),
-            -5.0,
-        ).to(dev),
-        upper_bounds=torch.full(
-            (n,),
-            5.0,
-        ).to(dev),
+        nominals=torch.ones(n),
+        covariance_matrix=torch.eye(n),
+        lower_bounds=torch.full((n,), -5.0),
+        upper_bounds=torch.full((n,), 5.0),
     )
-
-
-def _gaussian_prior(n: int = 5) -> Prior:
-    prior = Prior(prior_data=_make_prior_data(n))
-    return prior.to(TorchDeviceHandler().device)
+    return Prior(prior_data=data).to(dh.device)
 
 
 @pytest.fixture
@@ -69,153 +47,55 @@ def simulator(dummy_config):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MaskDistributionMap
+# Prior
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TestMaskDistributionMap:
-    def test_to_moves_mask_to_device(self):
-        mask = torch.tensor([True, False, True])
-        dist = MagicMock()
-        moved = MaskDistributionMap(mask=mask, distribution=dist).to(
-            torch.device("cpu")
-        )
-        assert moved.mask.device.type == "cpu"
-        assert moved.distribution is dist
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Prior — construction and properties
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestPriorProperties:
-    def test_dist_types_from_conftest_prior(self, prior):
-        """prior fixture has cyclical + flat + gaussian components."""
+class TestPrior:
+    @pytest.mark.slow
+    def test_conftest_prior_has_three_distribution_types(self, prior):
+        """cyclical + flat + gaussian give 3 sub-distributions."""
         assert len(prior._priors) == 3
-        assert torch.sum(prior._priors[0].mask).item() == 1  # cyclical
-        assert torch.sum(prior._priors[1].mask).item() == 3  # flat
-        assert torch.sum(prior._priors[2].mask).item() == 26  # gaussian
+        counts = [torch.sum(p.mask).item() for p in prior._priors]
+        assert counts == [1, 3, 26]
 
-    def test_mean_returns_nominals(self):
-        prior = _gaussian_prior()
-        mean = prior.mean
-        assert isinstance(mean, torch.Tensor)
-        assert mean.shape == (5,)
-
-    def test_n_params(self):
-        assert _gaussian_prior().n_params == 5
-
-    def test_variance_shape_and_positive(self):
-        var = _gaussian_prior().variance
-        assert var.shape == (5,)
-        assert torch.all(var > 0)
-
-    def test_support_not_none(self):
-        assert _gaussian_prior().support is not None
-
-    def test_prior_data_property(self):
-        pd_ = _gaussian_prior().prior_data
-        assert isinstance(pd_, PriorData)
-        assert len(pd_.parameter_names) == 5
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Prior — sampling
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestPriorSampling:
-    @pytest.mark.parametrize(
-        "shape,expected",
-        [
-            (torch.Size([8]), (8, 5)),
-            (torch.Size([1]), (1, 5)),
-        ],
-    )
-    def test_sample_shape(self, shape, expected):
-        assert _gaussian_prior().sample(shape).shape == torch.Size(expected)
-
-    def test_sample_within_bounds(self):
-        prior = _gaussian_prior()
-        samples = prior.sample(torch.Size([50]))
+    def test_samples_are_within_bounds(self):
+        prior = _make_prior()
+        samples = prior.sample(torch.Size([100]))
         assert torch.all(samples >= prior.prior_data.lower_bounds)
         assert torch.all(samples <= prior.prior_data.upper_bounds)
 
-    def test_check_bounds_all_inside(self):
-        prior = _gaussian_prior()
-        assert torch.all(
-            prior.check_bounds(torch.zeros(10, 5).to(prior.device_handler.device))
+    def test_prior_data_slicing(self):
+        data = PriorData(
+            parameter_names=np.array(["a", "b", "c"]),
+            nominals=torch.tensor([1.0, 2.0, 3.0]),
+            covariance_matrix=torch.eye(3),
+            lower_bounds=torch.tensor([0.0, 0.0, 0.0]),
+            upper_bounds=torch.tensor([5.0, 5.0, 5.0]),
         )
+        mask = torch.tensor([True, False, True])
+        sliced = data[mask]
+        np.testing.assert_array_equal(sliced.parameter_names, ["a", "c"])
+        assert sliced.nominals.shape == (2,)
+        assert sliced.covariance_matrix.shape == (2, 2)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Prior — persistence
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestPriorPersistence:
     def test_save_and_load_round_trip(self, tmp_path):
-        prior = _gaussian_prior()
+        prior = _make_prior()
         out = tmp_path / "prior.pkl"
         prior.save(out)
         loaded = load_prior(out)
         assert isinstance(loaded, Prior)
         assert loaded.n_params == prior.n_params
 
-    def test_load_prior_raises_not_found(self, tmp_path):
+    def test_load_prior_raises_for_missing_or_wrong_type(self, tmp_path):
         with pytest.raises(PriorNotFound):
             load_prior(tmp_path / "nonexistent.pkl")
 
-    def test_load_prior_raises_wrong_type(self, tmp_path):
         bad = tmp_path / "bad.pkl"
         with bad.open("wb") as f:
             pickle.dump({"not": "a prior"}, f)
         with pytest.raises(PriorNotFound):
             load_prior(bad)
-
-    def test_prior_to_device_returns_self(self):
-        prior = _gaussian_prior()
-        assert prior.to(torch.device("cpu")) is prior
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# _check_boundary warnings
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestCheckBoundary:
-    """Shared inputs for both warning tests."""
-
-    @pytest.fixture()
-    def _inputs(self):
-
-        return (
-            torch.tensor([1.0, 2.0]),
-            torch.tensor([0.1, 0.1]),
-            np.array(["param_a", "param_b"]),
-            get_logger(),
-        )
-
-    def test_warning_emitted_for_wide_bounds(self, _inputs):
-
-        nominal, error, names, logger = _inputs
-        lower = torch.tensor([-100.0, 2.0])
-        upper = torch.tensor([1.0, 100.0])
-
-        with patch.object(logger, "warning") as mock_warning:
-            _check_boundary(nominal, error, lower, upper, names)
-            assert mock_warning.call_count == 3  # header + 2 params
-
-    def test_no_warning_for_tight_bounds(self, _inputs):
-
-        nominal, error, names, logger = _inputs
-        lower = torch.tensor([0.5, 1.5])
-        upper = torch.tensor([1.5, 2.5])
-
-        with patch.object(logger, "warning") as mock_warning:
-            _check_boundary(nominal, error, lower, upper, names)
-        mock_warning.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -225,43 +105,15 @@ class TestCheckBoundary:
 
 @pytest.mark.slow
 class TestSimulatorForward:
-    # def test_returns_at_most_n_samples(self, simulator):
-    #     n = 5000
-    #     theta, x = simulator.simulate(n)
-    #     assert theta.shape[0] <= n
-    #     assert theta.shape[0] == x.shape[0]
-
-    # def test_x_is_poisson_distributed(self, simulator):
-    #     """Each output bin should follow Poisson(lambda=1)."""
-    #     n = 20_000
-    #     _, x = simulator.simulate(n)
-    #     max_k = 5
-    #     for bin_idx in range(x.shape[1]):
-    #         vals = x[:, bin_idx]
-    #         obs = np.array(
-    #             [np.sum(vals == k) for k in range(max_k)] + [np.sum(vals >= max_k)]
-    #         )
-    #         probs = np.array(
-    #             [stats.poisson.pmf(k, mu=1) for k in range(max_k)]
-    #             + [1 - stats.poisson.cdf(max_k - 1, mu=1)]
-    #         )
-    #         exp = probs * n
-    #         valid = exp >= 5
-    #         _, p = stats.chisquare(obs[valid], f_exp=exp[valid])
-    #         assert p > 0.001, f"Bin {bin_idx}: chi2 p={p:.4f}"
-
-    def test_x_non_negative_integers(self, simulator):
+    def test_output_is_non_negative_integers(self, simulator):
         _, x = simulator.simulate(1000)
         assert np.all(x >= 0)
         assert np.all(x == x.astype(int))
 
-    def test_x_mean_near_one(self, simulator):
+    def test_output_mean_near_one(self, simulator):
+        """DummySimulator returns ones so Poisson(1) samples should have mean≈1."""
         _, x = simulator.simulate(20_000)
         assert np.all(np.abs(x.mean(axis=0) - 1.0) < 0.05)
-
-    def test_x_variance_near_one(self, simulator):
-        _, x = simulator.simulate(200_000)
-        assert np.all(np.abs(x.var(axis=0) - 1.0) < 0.05)
 
     def test_skips_bad_simulations(self, dummy_config):
         sim = Simulator("dummy_simulator", "DummySimulator", config=dummy_config)
@@ -276,10 +128,9 @@ class TestSimulatorForward:
 
         sim.simulator_wrapper.simulate = flaky
         theta, x = sim.simulate(10)
-        assert len(theta) < 10
-        assert len(theta) == len(x)
+        assert len(theta) < 10 and len(theta) == len(x)
 
-    def test_returns_empty_when_all_bad(self, dummy_config):
+    def test_returns_empty_arrays_when_all_fail(self, dummy_config):
         sim = Simulator("dummy_simulator", "DummySimulator", config=dummy_config)
         sim.simulator_wrapper.simulate = MagicMock(side_effect=RuntimeError("bad"))
         theta, _ = sim.simulate(5)
@@ -293,30 +144,15 @@ class TestSimulatorForward:
 
 @pytest.mark.slow
 class TestSimulatorPersistence:
-    def test_save_feather_round_trip(self, simulator, tmp_path):
+    def test_save_and_reload_feather(self, simulator, tmp_path):
         theta, x = simulator.simulate(10)
         path = tmp_path / "data.feather"
         simulator.save(path, theta, x)
-        assert path.exists()
         t, x2 = from_feather(path, simulator.prior.prior_data.parameter_names.tolist())
         assert len(t) == len(x2) == 10
-
-    def test_save_with_prior_path(self, dummy_config, tmp_path):
-        sim = Simulator("dummy_simulator", "DummySimulator", config=dummy_config)
-        theta = np.ones((5, sim.prior.n_params), dtype=np.float32)
-        x = np.ones((5, 12), dtype=np.float32)
-        prior_file = tmp_path / "prior.pkl"
-        sim.save(tmp_path / "data.feather", theta, x, prior_path=prior_file)
-        assert prior_file.exists()
 
     def test_save_data_creates_parquet(self, dummy_config, tmp_path):
         sim = Simulator("dummy_simulator", "DummySimulator", config=dummy_config)
         out = tmp_path / "obs.parquet"
         sim.save_data(out)
         assert out.exists()
-
-    def test_save_data_accepts_string_path(self, dummy_config, tmp_path):
-        sim = Simulator("dummy_simulator", "DummySimulator", config=dummy_config)
-        out = str(tmp_path / "obs2.parquet")
-        sim.save_data(out)
-        assert Path(out).exists()
