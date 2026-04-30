@@ -26,7 +26,12 @@ from mach3sbitools.utils.config import PosteriorConfig, TrainingConfig
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _tiny_dataset(n: int = 200, theta_dim: int = 4, x_dim: int = 6) -> TensorDataset:
+def DummyDataSet(n: int = 200, theta_dim: int = 4, x_dim: int = 6) -> TensorDataset:
+    """Return a plain TensorDataset with random (theta, x) pairs.
+
+    SBIDataModule expects a TensorDataset, not a LightningDataModule, so this
+    is a plain factory function rather than a class.
+    """
     theta = torch.randn(n, theta_dim)
     x = torch.randn(n, x_dim)
     return TensorDataset(theta, x)
@@ -210,21 +215,21 @@ class TestSBILightningModuleConfigureOptimizers:
 # ─────────────────────────────────────────────────────────────────────────────
 class TestSBIDataModuleInit:
     def test_stores_dataset_and_config(self, tmp_path):
-        ds = _tiny_dataset()
+        ds = DummyDataSet()
         cfg = _minimal_config(tmp_path)
         dm = SBIDataModule(ds, cfg)
         assert dm.dataset is ds
         assert dm.config is cfg
 
     def test_train_val_datasets_none_before_setup(self, tmp_path):
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         assert dm.train_dataset is None
         assert dm.val_dataset is None
 
 
 class TestSBIDataModuleSetup:
     def test_setup_creates_splits(self, tmp_path):
-        dm = SBIDataModule(_tiny_dataset(n=200), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(n=200), _minimal_config(tmp_path))
         dm.setup()
         assert dm.train_dataset is not None
         assert dm.val_dataset is not None
@@ -233,20 +238,20 @@ class TestSBIDataModuleSetup:
         n = 200
         cfg = _minimal_config(tmp_path)
         cfg.validation_fraction = 0.1
-        dm = SBIDataModule(_tiny_dataset(n=n), cfg)
+        dm = SBIDataModule(DummyDataSet(n=n), cfg)
         dm.setup()
         assert len(dm.train_dataset) + len(dm.val_dataset) == n
 
     def test_val_fraction_respected(self, tmp_path):
         cfg = _minimal_config(tmp_path)
         cfg.validation_fraction = 0.2
-        dm = SBIDataModule(_tiny_dataset(n=100), cfg)
+        dm = SBIDataModule(DummyDataSet(n=100), cfg)  # fixed: was fx(n=100)
         dm.setup()
         assert len(dm.val_dataset) == 20
 
     def test_setup_is_deterministic(self, tmp_path):
         """Same seed should produce identical splits on repeated calls."""
-        ds = _tiny_dataset(n=200)
+        ds = DummyDataSet(n=200)
         cfg = _minimal_config(tmp_path)
 
         dm1 = SBIDataModule(ds, cfg)
@@ -261,48 +266,48 @@ class TestSBIDataModuleSetup:
 
     def test_setup_accepts_stage_argument(self, tmp_path):
         """setup() must not raise when stage is passed (Lightning contract)."""
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         dm.setup(stage="fit")
         assert dm.train_dataset is not None
 
 
 class TestSBIDataModuleDataLoaders:
     def test_train_dataloader_returns_dataloader(self, tmp_path):
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         dm.setup()
         assert isinstance(dm.train_dataloader(), DataLoader)
 
     def test_val_dataloader_returns_dataloader(self, tmp_path):
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         dm.setup()
         assert isinstance(dm.val_dataloader(), DataLoader)
 
     def test_train_dataloader_batch_size(self, tmp_path):
         cfg = _minimal_config(tmp_path)
         cfg.batch_size = 16
-        dm = SBIDataModule(_tiny_dataset(n=200), cfg)
+        dm = SBIDataModule(DummyDataSet(n=200), cfg)
         dm.setup()
         assert dm.train_dataloader().batch_size == 16
 
     def test_train_dataloader_shuffles(self, tmp_path):
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         dm.setup()
         # DataLoader doesn't expose shuffle directly — check via sampler type
         assert isinstance(dm.train_dataloader().sampler, RandomSampler)
 
     def test_val_dataloader_does_not_shuffle(self, tmp_path):
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         dm.setup()
         assert isinstance(dm.val_dataloader().sampler, SequentialSampler)
 
     def test_train_dataloader_drops_last(self, tmp_path):
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         dm.setup()
         assert dm.train_dataloader().drop_last is True
 
     def test_num_workers_is_zero(self, tmp_path):
         """Data is pre-loaded in RAM — workers should always be 0."""
-        dm = SBIDataModule(_tiny_dataset(), _minimal_config(tmp_path))
+        dm = SBIDataModule(DummyDataSet(), _minimal_config(tmp_path))
         dm.setup()
         assert dm.train_dataloader().num_workers == 0
         assert dm.val_dataloader().num_workers == 0
@@ -320,7 +325,7 @@ class TestLightningTrainingIntegration:
         cfg = _minimal_config(tmp_path, max_epochs=2, stop_after_epochs=50)
         model = _tiny_model()
         module = SBILightningModule(model, cfg)
-        dm = SBIDataModule(_tiny_dataset(n=200), cfg)
+        dm = SBIDataModule(DummyDataSet(n=200), cfg)
 
         trainer = L.Trainer(
             max_epochs=2,
@@ -335,7 +340,7 @@ class TestLightningTrainingIntegration:
     def test_ema_val_loss_updated_after_training(self, tmp_path):
         cfg = _minimal_config(tmp_path, max_epochs=3, stop_after_epochs=50)
         module = SBILightningModule(_tiny_model(), cfg)
-        dm = SBIDataModule(_tiny_dataset(n=200), cfg)
+        dm = SBIDataModule(DummyDataSet(n=200), cfg)
 
         trainer = L.Trainer(
             max_epochs=3,
@@ -351,7 +356,7 @@ class TestLightningTrainingIntegration:
     def test_checkpoint_written(self, tmp_path):
         cfg = _minimal_config(tmp_path, max_epochs=2, autosave_every=1)
         module = SBILightningModule(_tiny_model(), cfg)
-        dm = SBIDataModule(_tiny_dataset(n=200), cfg)
+        dm = SBIDataModule(DummyDataSet(n=200), cfg)
 
         ckpt_cb = ModelCheckpoint(
             dirpath=tmp_path / "checkpoints",

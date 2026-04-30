@@ -64,6 +64,8 @@ class SBILightningModule(L.LightningModule):
         self.model = density_estimator
         self.config = config
         self.model_config = model_config
+        # Needed for scheduling
+        self.lr = config.learning_rate
         self.save_hyperparameters(ignore=["density_estimator"])
 
         # EMA state
@@ -271,7 +273,7 @@ class SBILightningModule(L.LightningModule):
         """Adam + ReduceLROnPlateau scheduler monitoring ``val/ema_loss``."""
         optimizer = torch.optim.Adam(
             self.model.parameters(),
-            lr=self.config.learning_rate,
+            lr=self.lr,
             weight_decay=1e-5,
         )
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
