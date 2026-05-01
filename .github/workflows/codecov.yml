@@ -37,4 +37,4 @@ jobs:
           verbose: true
           files: nuTens_coverage.json
         env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN_SBITOOLS }}
