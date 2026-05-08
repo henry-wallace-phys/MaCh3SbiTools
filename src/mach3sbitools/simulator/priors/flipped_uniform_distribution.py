@@ -56,6 +56,9 @@ class FlippedUniformDistribution(torch.distributions.Distribution):
         self.device = nominals.device
         self._lower = torch.tensor(lower, dtype=torch.double, device=self.device)
         self._upper = torch.tensor(upper, dtype=torch.double, device=self.device)
+
+        print(self._upper, self._lower)
+
         self._width = self._upper - self._lower  # width of one region
         self._pdf_val = 0.5 / self._width  # constant density on each region
 
